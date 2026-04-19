@@ -1,17 +1,34 @@
+// this helps know when the screen is currently focused
 import { useFocusEffect } from '@react-navigation/native';
+
+// used to move between screens
+
 import { router } from 'expo-router';
+
+// react stuff
 import React, { useCallback, useEffect } from 'react';
+
+// ui parts for this screen
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+// gets settings like contrast mode, bigger text and voice first mode
 import { useAppSettings } from '../../context/appSettingsContext';
+
+// gets voice assistant functions
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
 
 export default function HomeScreen() {
+  // these are used so the voice assistant knows this screen and what it can do
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // app settings used to change screen look / behaviour
   const { highContrastMode, largerTextEnabled, voiceFirstMode } =
     useAppSettings();
 
+
+
+  // when user comes onto this page, register it as home screen
   useFocusEffect(
     useCallback(() => {
       registerScreen('home');
@@ -19,6 +36,7 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
+    // this lets the voice assistant navigate to another route from home
     registerScreenActions('home', {
       navigateToRoute: async (route: string) => {
         router.push(route as any);
@@ -26,7 +44,9 @@ export default function HomeScreen() {
     });
   }, [registerScreenActions]);
 
+
   useEffect(() => {
+    // giving some info about this page to the voice assistant
     registerScreenState('home', {
       screenTitle: 'AI Wardrobe Assistant',
       availableRoutes: [
@@ -41,13 +61,17 @@ export default function HomeScreen() {
     });
   }, [registerScreenState]);
 
+  // these style vars change if high contrast mode is turned on
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
 
-  const outerFrameDynamicStyle = highContrastMode
+  
+    const outerFrameDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff', borderColor: '#000000' }
     : null;
+
+
 
   const innerFrameDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff', borderColor: '#000000' }
@@ -65,7 +89,9 @@ export default function HomeScreen() {
     ? { backgroundColor: '#000000' }
     : null;
 
-  const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
+    const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
+
+  // bigger text if that setting is on
 
   const largeTitleStyle = largerTextEnabled ? { fontSize: 26 } : null;
   const largeHeroStyle = largerTextEnabled ? { fontSize: 20, lineHeight: 28 } : null;
@@ -79,6 +105,7 @@ export default function HomeScreen() {
       <View style={[styles.outerFrame, outerFrameDynamicStyle]}>
         <View style={[styles.innerFrame, innerFrameDynamicStyle]}>
           <View style={styles.headerRow}>
+            {/* this empty bit helps keep the title looking centred */}
             <View style={styles.headerSpacer} />
 
             <View style={styles.titleWrapper}>
@@ -88,6 +115,7 @@ export default function HomeScreen() {
               <View style={[styles.titleLine, titleLineDynamicStyle]} />
             </View>
 
+            {/* settings button takes user to accessibility page */}
             <Pressable
               style={[styles.settingsButton, settingsButtonDynamicStyle]}
               onPress={() => router.push({ pathname: '/accessibility' as any })}
@@ -99,11 +127,13 @@ export default function HomeScreen() {
                   largeSettingsIconStyle,
                 ]}
               >
+
                 ⚙
               </Text>
             </Pressable>
           </View>
 
+          {/* main question box on the home page */}
           <View style={[styles.heroBox, cardDynamicStyle]}>
             <Text style={[styles.heroText, textDynamicStyle, largeHeroStyle]}>
               What should I wear today?
@@ -114,6 +144,7 @@ export default function HomeScreen() {
             Based on your wardrobe, weather and preferences
           </Text>
 
+          {/* only shows this if voice first mode is on */}
           {voiceFirstMode ? (
             <Text style={[styles.voiceHintText, textDynamicStyle, largeBodyStyle]}>
               Voice-first mode is on. You can use the microphone to move through
@@ -122,6 +153,7 @@ export default function HomeScreen() {
           ) : null}
 
           <View style={styles.actionsWrapper}>
+            {/* main button/card for getting outfit suggestions */}
             <Pressable
               style={[styles.card, styles.primaryCard, cardDynamicStyle]}
               onPress={() => router.push('/(tabs)/suggestions')}
@@ -129,6 +161,7 @@ export default function HomeScreen() {
               <Text
                 style={[
                   styles.primaryCardTitle,
+
                   textDynamicStyle,
                   largeCardTitleStyle,
                 ]}
@@ -147,6 +180,7 @@ export default function HomeScreen() {
             </Pressable>
 
             <View style={styles.cardGrid}>
+              {/* takes user to add item page */}
               <Pressable
                 style={[styles.smallCard, cardDynamicStyle]}
                 onPress={() => router.push('/(tabs)/addItem')}
@@ -171,10 +205,12 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
 
+              {/* opens wardrobe page */}
               <Pressable
                 style={[styles.smallCard, cardDynamicStyle]}
                 onPress={() => router.push('/(tabs)/wardrobe')}
               >
+
                 <Text
                   style={[
                     styles.smallCardTitle,
@@ -195,6 +231,7 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
 
+              {/* goes to saved outfit suggestions */}
               <Pressable
                 style={[styles.smallCard, cardDynamicStyle]}
                 onPress={() => router.push('/(tabs)/savedOutfits')}
@@ -218,6 +255,9 @@ export default function HomeScreen() {
                   View favourite outfit suggestions
                 </Text>
               </Pressable>
+
+              {/* opens the page with older outfit looks */}
+
 
               <Pressable
                 style={[styles.smallCard, cardDynamicStyle]}
@@ -248,8 +288,12 @@ export default function HomeScreen() {
       </View>
     </View>
   );
+
+
+
 }
 
+// styles for home page
 const styles = StyleSheet.create({
   screen: {
     flex: 1,

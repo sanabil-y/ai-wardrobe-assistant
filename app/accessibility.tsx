@@ -1,5 +1,14 @@
+// router is used to go back or move to another page
 import { router } from 'expo-router';
+
+// react
 import React from 'react';
+
+
+
+
+
+// ui parts for this screen
 import {
   Pressable,
   ScrollView,
@@ -8,10 +17,15 @@ import {
   Text,
   View,
 } from 'react-native';
+
+// gets all saved accessibility/app settings
 import { useAppSettings } from '../context/appSettingsContext';
+
+// gets voice assistant state too
 import { useVoiceAssistant } from '../context/voiceAssistantContext';
 
 export default function AccessibilityScreen() {
+  // settings from app settings context
   const {
     voiceFirstMode,
     highContrastMode,
@@ -20,8 +34,12 @@ export default function AccessibilityScreen() {
     updateSetting,
   } = useAppSettings();
 
+
+
+  // voice on/off comes from voice assistant context
   const { voiceEnabled, setVoiceEnabled } = useVoiceAssistant();
 
+  // these styles change when high contrast mode is on
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -42,10 +60,12 @@ export default function AccessibilityScreen() {
     ? { backgroundColor: '#000000', borderColor: '#000000' }
     : null;
 
+
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
 
   const darkButtonTextStyle = highContrastMode ? { color: '#ffffff' } : null;
 
+  // these make text bigger if larger text setting is on
   const largeTitleStyle = largerTextEnabled ? { fontSize: 26 } : null;
   const largeLabelStyle = largerTextEnabled ? { fontSize: 16 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 14, lineHeight: 20 } : null;
@@ -59,6 +79,7 @@ export default function AccessibilityScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.headerRow}>
+            {/* back button to previous screen */}
             <Pressable style={[styles.backButton, cardDynamicStyle]} onPress={() => router.back()}>
               <Text style={[styles.backButtonText, textDynamicStyle, largeBackStyle]}>←</Text>
             </Pressable>
@@ -75,9 +96,11 @@ export default function AccessibilityScreen() {
               />
             </View>
 
+            {/* this blank space helps keep title centred */}
             <View style={styles.headerSpacer} />
           </View>
 
+          {/* voice chat toggle */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -89,6 +112,8 @@ export default function AccessibilityScreen() {
                 </Text>
               </View>
 
+
+
               <Switch
                 value={voiceEnabled}
                 onValueChange={setVoiceEnabled}
@@ -98,6 +123,7 @@ export default function AccessibilityScreen() {
             </View>
           </View>
 
+          {/* voice first mode toggle */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -118,6 +144,7 @@ export default function AccessibilityScreen() {
             </View>
           </View>
 
+          {/* contrast mode toggle */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -138,6 +165,7 @@ export default function AccessibilityScreen() {
             </View>
           </View>
 
+          {/* audio descriptions toggle */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -160,6 +188,7 @@ export default function AccessibilityScreen() {
             </View>
           </View>
 
+          {/* bigger text toggle */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -180,6 +209,7 @@ export default function AccessibilityScreen() {
             </View>
           </View>
 
+          {/* goes to privacy page */}
           <Pressable
             style={[styles.privacyButton, buttonDynamicStyle]}
             onPress={() => router.push({ pathname: '/privacy' as any })}
@@ -195,6 +225,7 @@ export default function AccessibilityScreen() {
             </Text>
           </Pressable>
 
+          {/* little info box at bottom */}
           <View style={[styles.infoBox, cardDynamicStyle]}>
             <Text style={[styles.infoTitle, textDynamicStyle, largeLabelStyle]}>
               Built to support more independent use
@@ -208,8 +239,10 @@ export default function AccessibilityScreen() {
       </View>
     </View>
   );
+  
 }
 
+// styles for accessibility screen
 const styles = StyleSheet.create({
   screen: {
     flex: 1,

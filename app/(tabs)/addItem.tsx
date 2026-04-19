@@ -1,10 +1,27 @@
+// picker for the dropdown boxes
 import { Picker } from '@react-native-picker/picker';
+
+// this helps run stuff when this screen is opened/focused
 import { useFocusEffect } from '@react-navigation/native';
+
+// lets user pick an image from gallery
 import * as ImagePicker from 'expo-image-picker';
+
+// used for reading text out loud
 import * as Speech from 'expo-speech';
+
+// firestore stuff for saving and reading wardrobe items
 import { addDoc, collection, getDocs } from 'firebase/firestore';
+
+// storage stuff for image upload
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+
+
+
+// react hooks
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+
+// main react native components used on this page
 import {
   Alert,
   Image,
@@ -15,27 +32,45 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
+// gets app settings like privacy mode, contrast mode etc
 import { useAppSettings } from '../../context/appSettingsContext';
+
+// gets voice assistant functions for this screen
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
+
+
+
+// firebase config
 import { db, storage } from '../../firebaseConfig';
+
+// helper for saving item only on the device if privacy mode is on
 import { addLocalWardrobeItem } from '../../lib/localData';
 
 export default function AddItemScreen() {
+  // states for all the form boxes
   const [itemName, setItemName] = useState('');
   const [category, setCategory] = useState('');
   const [colour, setColour] = useState('');
   const [occasion, setOccasion] = useState('');
   const [mood, setMood] = useState('');
-  const [description, setDescription] = useState('');
+    const [description, setDescription] = useState('');
+
+  // imageUri is the phone image path, imageUrl is after upload
   const [imageUri, setImageUri] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+
+  // just to know if speech is playing rn
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // ref for scrolling the screen by code / voice command
   const scrollViewRef = useRef<ScrollView | null>(null);
 
+  // functions from the voice assistant context
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // settings from app settings context
   const {
     approveImagesBeforeAI,
     localStorageOnly,
@@ -44,12 +79,14 @@ export default function AddItemScreen() {
     largerTextEnabled,
   } = useAppSettings();
 
+  // when this screen opens, register it as addItem
   useFocusEffect(
     useCallback(() => {
       registerScreen('addItem');
     }, [registerScreen])
   );
 
+  // makes text look neater before saving
   const capitalizeWords = (text: string) =>
     text
       .trim()
@@ -58,6 +95,7 @@ export default function AddItemScreen() {
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
 
+  // asks user first if image approval setting is turned on
   const askForImageApproval = () =>
     new Promise<boolean>((resolve) => {
       Alert.alert(
@@ -77,6 +115,7 @@ export default function AddItemScreen() {
       );
     });
 
+  // opens image gallery so user can pick a photo
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -84,22 +123,28 @@ export default function AddItemScreen() {
       quality: 0.7,
     });
 
+    // if user picked one, save it
     if (!result.canceled) {
       setImageUri(result.assets[0].uri);
       setImageUrl('');
     }
   };
 
+  // uploads chosen image to firebase storage and gets back the url
   const uploadImageAndGetUrl = async () => {
     if (!imageUri) {
       throw new Error('No image selected');
     }
 
+    // turns the local image into blob form first
     const response = await fetch(imageUri);
-    const blob = await response.blob();
+     const blob = await response.blob();
 
+    // gives the file a unique name
     const fileName = `wardrobe/${Date.now()}-${itemName || 'item'}.jpg`;
     const storageRef = ref(storage, fileName);
+
+
 
     await uploadBytes(storageRef, blob);
     const uploadedImageUrl = await getDownloadURL(storageRef);
@@ -107,9 +152,11 @@ export default function AddItemScreen() {
     return uploadedImageUrl;
   };
 
+  // clears everything in the form and stops speech too
   const handleClearForm = () => {
     Speech.stop();
     setIsSpeaking(false);
+
     setItemName('');
     setCategory('');
     setColour('');
@@ -120,12 +167,14 @@ export default function AddItemScreen() {
     setImageUrl('');
   };
 
+  // sends the image to the backend so ai can fill some fields in
   const handleAnalyzeImage = async () => {
     if (!imageUri) {
       Alert.alert('No image selected', 'Please choose an image first');
       return;
     }
 
+    // if approval setting is on, ask before doing ai analysis
     if (approveImagesBeforeAI) {
       const approved = await askForImageApproval();
 
@@ -135,6 +184,7 @@ export default function AddItemScreen() {
     }
 
     try {
+      // upload first so backend can use the image url
       const uploadedImageUrl = await uploadImageAndGetUrl();
       setImageUrl(uploadedImageUrl);
 
@@ -148,6 +198,7 @@ export default function AddItemScreen() {
 
       const data = await response.json();
 
+      // fills the inputs using what ai gives back
       setItemName(data.itemName || '');
       setCategory(data.category || '');
       setColour(data.colour || '');
@@ -160,8 +211,11 @@ export default function AddItemScreen() {
       console.error(error);
       Alert.alert('Error', 'Failed to analyze image');
     }
+
+
   };
 
+  // reads the current details aloud
   const handleReadAloud = () => {
     if (!audioDescriptionsEnabled) {
       Alert.alert(
@@ -171,16 +225,20 @@ export default function AddItemScreen() {
       return;
     }
 
+    // if theres nothing there then dont read anything
     if (!itemName && !category && !colour && !occasion && !mood && !description) {
       return;
     }
 
+    // if already speaking, pressing again stops it
     if (isSpeaking) {
       Speech.stop();
       setIsSpeaking(false);
       return;
+
     }
 
+    // builds one string from all the form values
     const text = `${itemName || 'No item name yet'}. Category: ${
       category || 'not set'
     }. Colour: ${colour || 'not set'}. Occasion: ${
@@ -198,7 +256,9 @@ export default function AddItemScreen() {
     setIsSpeaking(true);
   };
 
+  // saves the item either locally or to firebase
   const handleSaveItem = async () => {
+    // basic check so user doesnt save half empty item
     if (!itemName || !category || !colour || !occasion || !mood || !imageUri) {
       Alert.alert(
         'Missing information',
@@ -210,10 +270,12 @@ export default function AddItemScreen() {
     try {
       let finalImageUrl = imageUrl;
 
-      if (!finalImageUrl) {
+      // if image wasnt uploaded already, do it now
+        if (!finalImageUrl) {
         finalImageUrl = await uploadImageAndGetUrl();
       }
 
+      // privacy mode means save only on this device
       if (localStorageOnly) {
         await addLocalWardrobeItem({
           id: `local-${Date.now()}`,
@@ -235,12 +297,14 @@ export default function AddItemScreen() {
         return;
       }
 
+      // gets all wardrobe docs first so duplicates can be checked
       const snapshot = await getDocs(collection(db, 'wardrobe'));
 
       const normalisedItemName = itemName.toLowerCase().trim();
-      const normalisedCategory = category.toLowerCase().trim();
+        const normalisedCategory = category.toLowerCase().trim();
       const normalisedColour = colour.toLowerCase().trim();
 
+      // checks if same item is already there
       const existingItem = snapshot.docs.find((wardrobeDoc) => {
         const data = wardrobeDoc.data();
 
@@ -256,6 +320,7 @@ export default function AddItemScreen() {
         return;
       }
 
+      // saves the item to firebase
       await addDoc(collection(db, 'wardrobe'), {
         itemName: capitalizeWords(itemName),
         category,
@@ -269,7 +334,7 @@ export default function AddItemScreen() {
 
       Speech.stop();
       setIsSpeaking(false);
-      Alert.alert('Success', 'Item saved to Firebase');
+       Alert.alert('Success', 'Item saved to Firebase');
       handleClearForm();
     } catch (error) {
       console.error(error);
@@ -277,6 +342,7 @@ export default function AddItemScreen() {
     }
   };
 
+  // used by voice actions to set occasion and mood
   const setOutfitContext = async (payload: {
     occasion?: string;
     mood?: string;
@@ -292,9 +358,11 @@ export default function AddItemScreen() {
   };
 
   useEffect(() => {
+    // registering what voice assistant is allowed to do on this screen
     registerScreenActions('addItem', {
       setOutfitContext,
 
+      // this lets voice assistant fill fields in
       setAddItemFields: async (payload: {
         itemName?: string;
         category?: string;
@@ -328,10 +396,14 @@ export default function AddItemScreen() {
         }
       },
 
+      // voice command can start ai analysis
       analyzeCurrentImage: async () => {
         await handleAnalyzeImage();
+
+
       },
 
+      // voice command can save item too
       saveCurrentItem: async () => {
         await handleSaveItem();
       },
@@ -340,6 +412,7 @@ export default function AddItemScreen() {
         handleClearForm();
       },
 
+      // scrolls page up or down a bit
       scrollScreen: async (direction: 'up' | 'down' = 'down') => {
         if (!scrollViewRef.current) return;
 
@@ -363,7 +436,11 @@ export default function AddItemScreen() {
     localStorageOnly,
   ]);
 
+
+
+
   useEffect(() => {
+    // this gives current screen state to the voice assistant
     registerScreenState('addItem', {
       itemName,
       category,
@@ -389,8 +466,10 @@ export default function AddItemScreen() {
     localStorageOnly,
     approveImagesBeforeAI,
     registerScreenState,
+
   ]);
 
+  // these style vars change if high contrast mode is on
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -422,6 +501,7 @@ export default function AddItemScreen() {
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
   const invertedTextDynamicStyle = { color: '#ffffff' };
 
+  // these make text bigger if larger text setting is on
   const largeTitleStyle = largerTextEnabled ? { fontSize: 28 } : null;
   const largeLabelStyle = largerTextEnabled ? { fontSize: 15 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 15, lineHeight: 22 } : null;
@@ -443,6 +523,8 @@ export default function AddItemScreen() {
             <View style={[styles.titleLine, titleLineDynamicStyle]} />
           </View>
 
+
+          {/* shows this little message if privacy mode is on */}
           {localStorageOnly ? (
             <View style={[styles.statusInfoBox, softCardDynamicStyle]}>
               <Text style={[styles.statusInfoText, textDynamicStyle, largeStatusStyle]}>
@@ -451,6 +533,7 @@ export default function AddItemScreen() {
             </View>
           ) : null}
 
+          {/* another message for image approval setting */}
           {approveImagesBeforeAI ? (
             <View style={[styles.statusInfoBox, softCardDynamicStyle]}>
               <Text style={[styles.statusInfoText, textDynamicStyle, largeStatusStyle]}>
@@ -503,6 +586,7 @@ export default function AddItemScreen() {
               onChangeText={setColour}
               autoCapitalize="words"
             />
+
 
             <Text style={[styles.label, textDynamicStyle, largeLabelStyle]}>
               Occasion
@@ -559,6 +643,7 @@ export default function AddItemScreen() {
               multiline
             />
 
+            {/* choose image button */}
             <Pressable
               style={[styles.secondaryDarkButton, darkButtonDynamicStyle]}
               onPress={pickImage}
@@ -574,12 +659,14 @@ export default function AddItemScreen() {
               </Text>
             </Pressable>
 
+            {/* only show preview if image was picked */}
             {imageUri ? (
               <View style={[styles.previewFrame, softCardDynamicStyle]}>
                 <Image source={{ uri: imageUri }} style={styles.previewImage} />
               </View>
             ) : null}
 
+            {/* this sends image to ai */}
             <Pressable
               style={[styles.secondaryDarkButton, darkButtonDynamicStyle]}
               onPress={handleAnalyzeImage}
@@ -595,6 +682,7 @@ export default function AddItemScreen() {
               </Text>
             </Pressable>
 
+            {/* read aloud button only if that setting is enabled */}
             {audioDescriptionsEnabled ? (
               <Pressable
                 style={[styles.readButton, cardDynamicStyle]}
@@ -612,6 +700,9 @@ export default function AddItemScreen() {
               </Pressable>
             ) : null}
 
+
+
+            {/* clears form */}
             <Pressable
               style={[styles.secondaryButton, cardDynamicStyle]}
               onPress={handleClearForm}
@@ -627,6 +718,7 @@ export default function AddItemScreen() {
               </Text>
             </Pressable>
 
+            {/* main save button */}
             <Pressable
               style={[styles.primaryButton, darkButtonDynamicStyle]}
               onPress={handleSaveItem}
@@ -642,12 +734,15 @@ export default function AddItemScreen() {
               </Text>
             </Pressable>
           </View>
+
         </ScrollView>
       </View>
+
     </View>
   );
 }
 
+// styles for this screen
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -671,6 +766,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 22,
     paddingBottom: 130,
+
   },
   headerBlock: {
     alignItems: 'center',
@@ -789,6 +885,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    
     marginBottom: 14,
   },
   secondaryDarkButtonText: {

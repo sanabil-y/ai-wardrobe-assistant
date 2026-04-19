@@ -1,8 +1,18 @@
+// picker for category dropdowns
 import { Picker } from '@react-native-picker/picker';
+
+// lets the screen know when it gets focused again
 import { useFocusEffect } from '@react-navigation/native';
+
+// used for reading item details out loud
 import * as Speech from 'expo-speech';
+
+// safer image component so broken image urls dont mess things up
 import SafeImage from '../../components/SafeImage';
 
+
+
+// firestore stuff for getting, deleting and updating wardrobe items
 import {
   collection,
   deleteDoc,
@@ -12,6 +22,8 @@ import {
   query,
   updateDoc,
 } from 'firebase/firestore';
+
+// react hooks
 import React, {
   useCallback,
   useEffect,
@@ -19,6 +31,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+
+// screen ui parts
 import {
   ActivityIndicator,
   Alert,
@@ -32,14 +46,26 @@ import {
   TextInput,
   View,
 } from 'react-native';
+
+// app settings like contrast mode and bigger text
 import { useAppSettings } from '../../context/appSettingsContext';
+
+
+
+// voice assistant stuff for this page
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
+
+// firebase config
 import { db } from '../../firebaseConfig';
+
+// local storage helpers for privacy mode items
 import {
   deleteLocalWardrobeItem,
   getLocalWardrobeItems,
   updateLocalWardrobeItem,
 } from '../../lib/localData';
+
+
 
 type WardrobeItem = {
   id: string;
@@ -55,30 +81,47 @@ type WardrobeItem = {
 };
 
 export default function WardrobeScreen() {
+  // all wardrobe items shown on screen
   const [items, setItems] = useState<WardrobeItem[]>([]);
+
+  // current filter at top
   const [selectedCategory, setSelectedCategory] = useState('All');
+
+  // item user clicked on, shown in modal
   const [selectedItem, setSelectedItem] = useState<WardrobeItem | null>(null);
+
+  // loading state while wardrobe is coming in
   const [loadingItems, setLoadingItems] = useState(true);
 
+  // edit mode + edit fields for modal
   const [isEditing, setIsEditing] = useState(false);
   const [editCategory, setEditCategory] = useState('');
   const [editColour, setEditColour] = useState('');
   const [editOccasion, setEditOccasion] = useState('');
   const [editMood, setEditMood] = useState('');
+
+  // checks if speech is playing rn
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // ref for list scrolling
   const listRef = useRef<FlatList<WardrobeItem> | null>(null);
+
+  // keeps latest firebase items saved without rerendering all the time
   const cloudItemsRef = useRef<WardrobeItem[]>([]);
+
+  // voice assistant helpers
 
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // settings used on this page
   const {
     audioDescriptionsEnabled,
     highContrastMode,
     largerTextEnabled,
   } = useAppSettings();
 
+  // categories for filters and edits
   const categories = [
     'All',
     'Top',
@@ -90,11 +133,13 @@ export default function WardrobeScreen() {
     'Other',
   ];
 
+  // merges local wardrobe items with cloud ones
   const refreshMergedItems = async (cloudItemsOverride?: WardrobeItem[]) => {
     const localItems = await getLocalWardrobeItems();
 
     const cloudItems = cloudItemsOverride || cloudItemsRef.current || [];
 
+    // sort newest first
     const merged = [...localItems, ...cloudItems].sort((a, b) => {
       const dateA =
         typeof a.createdAt?.toDate === 'function'
@@ -113,8 +158,10 @@ export default function WardrobeScreen() {
   };
 
   useEffect(() => {
+    // query for wardrobe ordered by date
     const q = query(collection(db, 'wardrobe'), orderBy('createdAt', 'desc'));
 
+    // live listener for firestore wardrobe
     const unsubscribe = onSnapshot(q, async (snapshot) => {
       const wardrobeItems = snapshot.docs.map((itemDoc) => ({
         id: itemDoc.id,
@@ -130,6 +177,7 @@ export default function WardrobeScreen() {
     return unsubscribe;
   }, []);
 
+  // when user opens this screen again, register it + refresh merged data
   useFocusEffect(
     useCallback(() => {
       registerScreen('wardrobe');
@@ -137,6 +185,7 @@ export default function WardrobeScreen() {
     }, [registerScreen])
   );
 
+  // filters items based on current category choice
   const filteredItems = useMemo(() => {
     if (selectedCategory === 'All') {
       return items;
@@ -145,21 +194,26 @@ export default function WardrobeScreen() {
     return items.filter((item) => item.category === selectedCategory);
   }, [items, selectedCategory]);
 
+  // stops speech and resets state
   const stopReading = () => {
+
     Speech.stop();
     setIsSpeaking(false);
   };
 
+  // closes modal and stops reading too
   const closeSelectedItem = () => {
     stopReading();
     setSelectedItem(null);
     setIsEditing(false);
   };
 
+  // deletes either local item or firebase item
   const handleDeleteItem = async (id: string) => {
     try {
       const existingItem = items.find((item) => item.id === id);
 
+      // local-only items delete from local storage
       if (existingItem?.localOnly) {
         await deleteLocalWardrobeItem(id);
         await refreshMergedItems();
@@ -172,6 +226,7 @@ export default function WardrobeScreen() {
         return;
       }
 
+      // cloud items delete from firestore
       await deleteDoc(doc(db, 'wardrobe', id));
 
       if (selectedItem?.id === id) {
@@ -185,6 +240,7 @@ export default function WardrobeScreen() {
     }
   };
 
+  // starts edit mode and fills edit states with current item values
   const handleStartEdit = () => {
     if (!selectedItem) return;
 
@@ -195,15 +251,18 @@ export default function WardrobeScreen() {
     setIsEditing(true);
   };
 
+  // saves edited values to local storage or firestore
   const handleSaveEdit = async () => {
     if (!selectedItem) return;
 
+    // simple validation
     if (!editCategory || !editColour || !editOccasion || !editMood) {
       Alert.alert('Missing information', 'Please complete all edit fields');
       return;
     }
 
     try {
+      // local item update
       if (selectedItem.localOnly) {
         await updateLocalWardrobeItem(selectedItem.id, {
           category: editCategory,
@@ -211,6 +270,8 @@ export default function WardrobeScreen() {
           occasion: editOccasion,
           mood: editMood,
         });
+
+
 
         setSelectedItem({
           ...selectedItem,
@@ -226,6 +287,7 @@ export default function WardrobeScreen() {
         return;
       }
 
+      // firestore item update
       await updateDoc(doc(db, 'wardrobe', selectedItem.id), {
         category: editCategory,
         colour: editColour,
@@ -233,6 +295,7 @@ export default function WardrobeScreen() {
         mood: editMood,
       });
 
+      // update modal state too so ui changes straight away
       setSelectedItem({
         ...selectedItem,
         category: editCategory,
@@ -249,6 +312,7 @@ export default function WardrobeScreen() {
     }
   };
 
+  // reads selected item details aloud
   const handleReadAloud = () => {
     if (!audioDescriptionsEnabled) {
       Alert.alert(
@@ -258,8 +322,11 @@ export default function WardrobeScreen() {
       return;
     }
 
+
+
     if (!selectedItem) return;
 
+    // press again to stop
     if (isSpeaking) {
       stopReading();
       return;
@@ -278,6 +345,7 @@ export default function WardrobeScreen() {
     setIsSpeaking(true);
   };
 
+  // finds an item by name or close match and opens it
   const openWardrobeItemByName = async (itemName?: string) => {
     if (!itemName) return;
 
@@ -296,6 +364,7 @@ export default function WardrobeScreen() {
       );
     });
 
+
     if (!matchedItem) return;
 
     stopReading();
@@ -303,6 +372,7 @@ export default function WardrobeScreen() {
     setIsEditing(false);
   };
 
+  // opens item by current filtered list position
   const openWardrobeItemByIndex = async (index?: number) => {
     const safeIndex = index ?? 0;
     const matchedItem = filteredItems[safeIndex];
@@ -314,6 +384,7 @@ export default function WardrobeScreen() {
     setIsEditing(false);
   };
 
+  // scrolls the list a bit up or down
   const scrollScreen = async (direction: 'up' | 'down' = 'down') => {
     if (!listRef.current) return;
 
@@ -323,6 +394,7 @@ export default function WardrobeScreen() {
     });
   };
 
+  // lets voice assistant fill edit fields
   const setSelectedItemFields = async (payload: {
     category?: string;
     colour?: string;
@@ -331,6 +403,7 @@ export default function WardrobeScreen() {
   }) => {
     if (!selectedItem) return;
 
+    // if not editing yet, start edit mode first
     if (!isEditing) {
       handleStartEdit();
     }
@@ -358,7 +431,9 @@ export default function WardrobeScreen() {
     }
   };
 
+
   useEffect(() => {
+    // actions the voice assistant can do on wardrobe screen
     registerScreenActions('wardrobe', {
       filterWardrobeCategory: async (category?: string) => {
         if (!category || category === 'All') {
@@ -382,6 +457,7 @@ export default function WardrobeScreen() {
         await openWardrobeItemByIndex(index);
       },
 
+      // opens by name if given, otherwise opens first item
       expandWardrobeItem: async (itemName?: string) => {
         if (itemName) {
           await openWardrobeItemByName(itemName);
@@ -417,6 +493,7 @@ export default function WardrobeScreen() {
       },
     });
   }, [
+  
     items,
     filteredItems,
     selectedItem,
@@ -429,6 +506,8 @@ export default function WardrobeScreen() {
   ]);
 
   useEffect(() => {
+
+    // current screen state for voice assistant
     registerScreenState('wardrobe', {
       selectedCategory,
       totalItems: items.length,
@@ -448,6 +527,7 @@ export default function WardrobeScreen() {
     registerScreenState,
   ]);
 
+  // accessibility style changes
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -483,10 +563,12 @@ export default function WardrobeScreen() {
   const modalOverlayDynamicStyle = highContrastMode
     ? { backgroundColor: 'rgba(0,0,0,0.6)' }
     : null;
+    
 
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
   const invertedTextDynamicStyle = { color: '#ffffff' };
 
+  // bigger text styles
   const largeTitleStyle = largerTextEnabled ? { fontSize: 28 } : null;
   const largeCardTitleStyle = largerTextEnabled ? { fontSize: 20 } : null;
   const largeLabelStyle = largerTextEnabled ? { fontSize: 15 } : null;
@@ -542,6 +624,7 @@ export default function WardrobeScreen() {
             </ScrollView>
           </View>
 
+          {/* loading wardrobe state */}
           {loadingItems ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#253041" />
@@ -558,6 +641,7 @@ export default function WardrobeScreen() {
             style={styles.list}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
+              // each wardrobe card opens modal when pressed
               <Pressable
                 style={[styles.card, cardDynamicStyle]}
                 onPress={() => setSelectedItem(item)}
@@ -571,6 +655,7 @@ export default function WardrobeScreen() {
                 </Text>
                 <View style={[styles.cardTitleLine, titleLineDynamicStyle]} />
 
+                {/* small info boxes for item details */}
                 <View style={styles.metaGrid}>
                   <View style={[styles.metaBox, softCardDynamicStyle]}>
                     <Text style={[styles.metaLabel, textDynamicStyle, largeSmallTextStyle]}>
@@ -622,6 +707,7 @@ export default function WardrobeScreen() {
                   </Text>
                 </View>
 
+                {/* quick delete button on card */}
                 <Pressable
                   style={[styles.deleteButton, darkButtonDynamicStyle]}
                   onPress={() => handleDeleteItem(item.id)}
@@ -648,6 +734,7 @@ export default function WardrobeScreen() {
         </View>
       </View>
 
+      {/* modal for one selected wardrobe item */}
       <Modal
         visible={selectedItem !== null}
         transparent
@@ -673,6 +760,7 @@ export default function WardrobeScreen() {
 
                   {isEditing ? (
                     <>
+                      {/* edit fields shown only in edit mode */}
                       <Text style={[styles.editLabel, textDynamicStyle, largeLabelStyle]}>
                         Category
                       </Text>
@@ -754,6 +842,7 @@ export default function WardrobeScreen() {
                     </>
                   ) : (
                     <>
+                      {/* normal view mode */}
                       <View style={styles.modalMetaGrid}>
                         <View style={[styles.modalMetaBox, softCardDynamicStyle]}>
                           <Text
@@ -861,6 +950,7 @@ export default function WardrobeScreen() {
                         </Text>
                       </View>
 
+                      {/* read aloud only if accessibility setting is on */}
                       {audioDescriptionsEnabled ? (
                         <Pressable
                           style={[styles.readButton, cardDynamicStyle]}
@@ -895,6 +985,7 @@ export default function WardrobeScreen() {
                     </>
                   )}
 
+                  {/* close modal button */}
                   <Pressable
                     style={[styles.closeButton, darkButtonDynamicStyle]}
                     onPress={closeSelectedItem}
@@ -919,6 +1010,7 @@ export default function WardrobeScreen() {
   );
 }
 
+// styles for wardrobe screen
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -1264,6 +1356,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
+
   },
   secondaryModalButtonText: {
     color: '#2b3440',

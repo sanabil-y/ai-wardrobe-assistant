@@ -1,5 +1,12 @@
+// react
 import React from 'react';
+
+
+
+// router used for going back
 import { router } from 'expo-router';
+
+// ui parts for this page
 import {
   Pressable,
   ScrollView,
@@ -8,9 +15,12 @@ import {
   Text,
   View,
 } from 'react-native';
+
+// gets privacy settings from app settings context
 import { useAppSettings } from '../context/appSettingsContext';
 
 export default function PrivacyScreen() {
+  // all privacy related settings used here
   const {
     approveImagesBeforeAI,
     localStorageOnly,
@@ -20,9 +30,11 @@ export default function PrivacyScreen() {
     updateSetting,
   } = useAppSettings();
 
+  // these styles change if contrast mode is on
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
+
 
   const outerFrameDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff', borderColor: '#000000' }
@@ -54,6 +66,7 @@ export default function PrivacyScreen() {
 
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
 
+  // bigger text if user turned that setting on
   const largeTitleStyle = largerTextEnabled ? { fontSize: 24 } : null;
   const largeLabelStyle = largerTextEnabled ? { fontSize: 16 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 14, lineHeight: 20 } : null;
@@ -66,7 +79,9 @@ export default function PrivacyScreen() {
           contentContainerStyle={[styles.innerFrame, innerFrameDynamicStyle]}
           showsVerticalScrollIndicator={false}
         >
+
           <View style={styles.headerRow}>
+            {/* back button */}
             <Pressable
               style={[styles.backButton, backButtonDynamicStyle]}
               onPress={() => router.back()}
@@ -85,9 +100,11 @@ export default function PrivacyScreen() {
               <View style={[styles.titleLine, titleLineDynamicStyle]} />
             </View>
 
+            {/* empty spacer so title stays centred */}
             <View style={styles.headerSpacer} />
           </View>
 
+          {/* image approval setting */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -110,6 +127,7 @@ export default function PrivacyScreen() {
             </View>
           </View>
 
+          {/* local storage only setting */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -132,6 +150,7 @@ export default function PrivacyScreen() {
             </View>
           </View>
 
+          {/* voice data processing setting */}
           <View style={[styles.card, cardDynamicStyle]}>
             <View style={styles.row}>
               <View style={styles.textWrap}>
@@ -154,6 +173,7 @@ export default function PrivacyScreen() {
             </View>
           </View>
 
+          {/* short reassurance line */}
           <View style={[styles.reassuranceBox, reassuranceDynamicStyle]}>
             <Text
               style={[
@@ -166,6 +186,7 @@ export default function PrivacyScreen() {
             </Text>
           </View>
 
+          {/* quick privacy points */}
           <View style={[styles.messageBox, messageBoxDynamicStyle]}>
             <Text
               style={[styles.messageBullet, textDynamicStyle, largeBodyStyle]}
@@ -193,6 +214,8 @@ export default function PrivacyScreen() {
     </View>
   );
 }
+
+// styles for privacy page
 
 const styles = StyleSheet.create({
   screen: {
@@ -237,6 +260,7 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 18,
     color: '#2b3440',
+    
     fontWeight: '600',
   },
   titleWrapper: {

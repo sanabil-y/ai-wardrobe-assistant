@@ -1,6 +1,16 @@
+// picker for the dropdown choices
+
 import { Picker } from '@react-native-picker/picker';
+
+// lets this screen know when it comes into focus
 import { useFocusEffect } from '@react-navigation/native';
+
+// used to get users current location for weather
 import * as Location from 'expo-location';
+
+
+
+// firestore stuff for saving and reading data
 import {
   addDoc,
   collection,
@@ -9,7 +19,12 @@ import {
   onSnapshot,
   serverTimestamp,
 } from 'firebase/firestore';
+
+// react hooks
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+
+// ui parts used on this screen
 import {
   ActivityIndicator,
   Alert,
@@ -20,10 +35,22 @@ import {
   Text,
   View,
 } from 'react-native';
+
+// card component used to show each outfit option
 import OutfitOptionCard from '../../components/OutfitOptionCard';
+
+// app settings like contrast mode, bigger text etc
 import { useAppSettings } from '../../context/appSettingsContext';
+
+// voice assistant functions
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
+
+
+
+// firebase config
 import { db } from '../../firebaseConfig';
+
+// gets locally saved wardrobe items too
 import { getLocalWardrobeItems } from '../../lib/localData';
 
 type WardrobeItem = {
@@ -66,6 +93,8 @@ type OutfitSuggestion = {
   };
 };
 
+
+
 type FeedbackSummary = {
   likedColours: string[];
   dislikedColours: string[];
@@ -79,34 +108,47 @@ type FeedbackSummary = {
 };
 
 export default function SuggestionsScreen() {
+
+  // user choices for outfit context
   const [occasion, setOccasion] = useState('');
   const [mood, setMood] = useState('');
   const [weather, setWeather] = useState('');
   const [useTodayWeather, setUseTodayWeather] = useState(false);
 
+  // all wardrobe items merged from local + cloud
   const [wardrobeItems, setWardrobeItems] = useState<WardrobeItem[]>([]);
+
+  // generated outfit suggestions
   const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
+
+  // loading states
   const [loading, setLoading] = useState(false);
   const [loadingWardrobe, setLoadingWardrobe] = useState(true);
   const [loadingWeather, setLoadingWeather] = useState(false);
 
+  // messages / save info / feedback
   const [noMatchMessage, setNoMatchMessage] = useState('');
   const [savedOutfitIds, setSavedOutfitIds] = useState<Record<string, string>>({});
   const [savingSuggestionKey, setSavingSuggestionKey] = useState('');
   const [feedbackMap, setFeedbackMap] = useState<Record<string, 'like' | 'dislike' | ''>>({});
 
+  // keeps latest cloud wardrobe items without causing extra rerenders
   const cloudItemsRef = useRef<WardrobeItem[]>([]);
 
+  // voice assistant helpers
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // settings used on this page
   const { highContrastMode, largerTextEnabled, voiceFirstMode } =
     useAppSettings();
 
+  // merges local wardrobe items with firebase ones
   const refreshMergedWardrobeItems = async (cloudItemsOverride?: WardrobeItem[]) => {
     const localItems = await getLocalWardrobeItems();
     const cloudItems = cloudItemsOverride || cloudItemsRef.current || [];
 
+    // sorting newest first
     const merged = [...localItems, ...cloudItems].sort((a, b) => {
       const dateA =
         typeof a.createdAt?.toDate === 'function'
@@ -124,10 +166,13 @@ export default function SuggestionsScreen() {
     setWardrobeItems(merged);
   };
 
+  // makes a unique key from the selected item ids in one outfit
+
   const getSuggestionKey = (suggestion: OutfitSuggestion) => {
     return [...suggestion.selectedItemIds].sort().join('|');
   };
 
+  // turns real weather values into a simple label for the app
   const mapWeatherCodeToLabel = (temperature: number, rain: number) => {
     if (rain > 0.2) return 'Rainy';
     if (temperature <= 10) return 'Cold';
@@ -135,57 +180,61 @@ export default function SuggestionsScreen() {
     return 'Mild';
   };
 
-const fetchTodayWeather = async () => {
-  try {
-    setLoadingWeather(true);
+  // gets todays weather using user location + open meteo
+  const fetchTodayWeather = async () => {
+    try {
+      setLoadingWeather(true);
 
-    const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
 
-    if (status !== 'granted') {
-      throw new Error('Location permission not granted');
+      if (status !== 'granted') {
+        throw new Error('Location permission not granted');
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const latitude = location.coords.latitude;
+      const longitude = location.coords.longitude;
+
+      const weatherResponse = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,rain`
+      );
+
+      if (!weatherResponse.ok) {
+        throw new Error('Weather API request failed');
+      }
+
+      const weatherData = await weatherResponse.json();
+
+      const temperature = Number(weatherData?.current?.temperature_2m ?? 15);
+      const rain = Number(weatherData?.current?.rain ?? 0);
+
+      const mappedWeather = mapWeatherCodeToLabel(temperature, rain);
+      setWeather(mappedWeather);
+    } catch (error) {
+      console.error('Weather fetch error:', error);
+      Alert.alert(
+        'Weather unavailable',
+        'Could not get today’s weather automatically. Please choose weather manually.'
+      );
+      setUseTodayWeather(false);
+    } finally {
+      setLoadingWeather(false);
     }
-
-    const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
-
-    const latitude = location.coords.latitude;
-    const longitude = location.coords.longitude;
-
-    const weatherResponse = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,rain`
-    );
-
-    if (!weatherResponse.ok) {
-      throw new Error('Weather API request failed');
-    }
-
-    const weatherData = await weatherResponse.json();
-
-    const temperature = Number(weatherData?.current?.temperature_2m ?? 15);
-    const rain = Number(weatherData?.current?.rain ?? 0);
-
-    const mappedWeather = mapWeatherCodeToLabel(temperature, rain);
-    setWeather(mappedWeather);
-  } catch (error) {
-    console.error('Weather fetch error:', error);
-    Alert.alert(
-      'Weather unavailable',
-      'Could not get today’s weather automatically. Please choose weather manually.'
-    );
-    setUseTodayWeather(false);
-  } finally {
-    setLoadingWeather(false);
-  }
-};
+  };
 
   useEffect(() => {
+    // live listener for wardrobe collection
     const unsubscribe = onSnapshot(collection(db, 'wardrobe'), async (snapshot) => {
       const items = snapshot.docs.map((itemDoc) => ({
         id: itemDoc.id,
         ...itemDoc.data(),
         localOnly: false,
       })) as WardrobeItem[];
+
+
 
       cloudItemsRef.current = items;
       await refreshMergedWardrobeItems(items);
@@ -195,6 +244,7 @@ const fetchTodayWeather = async () => {
     return () => unsubscribe();
   }, []);
 
+  // when user opens this screen, register it and refresh wardrobe
   useFocusEffect(
     useCallback(() => {
       registerScreen('suggestions');
@@ -202,6 +252,7 @@ const fetchTodayWeather = async () => {
     }, [registerScreen])
   );
 
+  // if weather toggle is on, fetch weather
   useEffect(() => {
     if (useTodayWeather) {
       fetchTodayWeather();
@@ -209,6 +260,7 @@ const fetchTodayWeather = async () => {
   }, [useTodayWeather]);
 
   const hasEnoughWardrobeItems = useMemo(() => {
+    // outfit needs top + bottom or at least a dress
     const tops = wardrobeItems.filter((item) => item.category.toLowerCase() === 'top');
     const bottoms = wardrobeItems.filter((item) => item.category.toLowerCase() === 'bottom');
     const dresses = wardrobeItems.filter((item) => item.category.toLowerCase() === 'dress');
@@ -216,6 +268,7 @@ const fetchTodayWeather = async () => {
     return (tops.length > 0 && bottoms.length > 0) || dresses.length > 0;
   }, [wardrobeItems]);
 
+  // gives a better message for what item type is missing
   const getMissingCategoryMessage = () => {
     const tops = wardrobeItems.filter((item) => item.category.toLowerCase() === 'top');
     const bottoms = wardrobeItems.filter((item) => item.category.toLowerCase() === 'bottom');
@@ -236,7 +289,9 @@ const fetchTodayWeather = async () => {
     return '';
   };
 
+  // clears current choices and current results
   const handleClearSelections = () => {
+
     setOccasion('');
     setMood('');
     setWeather('');
@@ -248,6 +303,7 @@ const fetchTodayWeather = async () => {
     setFeedbackMap({});
   };
 
+  // saves or unsaves an outfit as favourite
   const handleToggleFavourite = async (suggestion: OutfitSuggestion) => {
     const suggestionKey = getSuggestionKey(suggestion);
 
@@ -256,6 +312,7 @@ const fetchTodayWeather = async () => {
 
       const existingSavedId = savedOutfitIds[suggestionKey];
 
+      // if already saved, remove it
       if (existingSavedId) {
         await deleteDoc(doc(db, 'savedOutfits', existingSavedId));
 
@@ -269,6 +326,7 @@ const fetchTodayWeather = async () => {
         return;
       }
 
+      // if not saved, add it to savedOutfits
       const docRef = await addDoc(collection(db, 'savedOutfits'), {
         title: suggestion.title,
         selectedItemIds: suggestion.selectedItemIds,
@@ -293,8 +351,10 @@ const fetchTodayWeather = async () => {
     } finally {
       setSavingSuggestionKey('');
     }
+
   };
 
+  // stores like or dislike feedback for one suggestion
   const handleFeedback = async (
     suggestion: OutfitSuggestion,
     feedback: 'like' | 'dislike'
@@ -320,6 +380,8 @@ const fetchTodayWeather = async () => {
         [suggestionKey]: feedback,
       }));
 
+
+
       Alert.alert(
         'Feedback saved',
         feedback === 'like' ? 'You liked this outfit.' : 'You disliked this outfit.'
@@ -330,6 +392,7 @@ const fetchTodayWeather = async () => {
     }
   };
 
+  // saves all generated outfits into pastLooks history
   const savePastLooks = async (outfits: OutfitSuggestion[]) => {
     try {
       for (const outfit of outfits) {
@@ -351,6 +414,7 @@ const fetchTodayWeather = async () => {
     }
   };
 
+  // builds one summary from likes/dislikes/saved outfits so backend can learn prefs
   const buildFeedbackSummary = (): FeedbackSummary => {
     const likedColours = new Set<string>();
     const dislikedColours = new Set<string>();
@@ -362,6 +426,8 @@ const fetchTodayWeather = async () => {
     const preferredOccasions = new Set<string>();
     const preferredMoods = new Set<string>();
 
+
+    
     suggestions.forEach((suggestion) => {
       const suggestionKey = getSuggestionKey(suggestion);
       const feedback = feedbackMap[suggestionKey];
@@ -376,6 +442,7 @@ const fetchTodayWeather = async () => {
         dislikedOutfitKeys.add(suggestionKey);
       }
 
+      // gets the actual items inside that suggestion
       const selectedItems = wardrobeItems.filter((item) =>
         suggestion.selectedItemIds.includes(item.id)
       );
@@ -398,6 +465,7 @@ const fetchTodayWeather = async () => {
       });
     });
 
+    // add currently saved outfits too
     Object.keys(savedOutfitIds).forEach((key) => {
       if (savedOutfitIds[key]) {
         savedOutfitKeys.add(key);
@@ -417,6 +485,7 @@ const fetchTodayWeather = async () => {
     };
   };
 
+  // main function that asks backend to generate outfits
   const handleGetSuggestion = async () => {
     if (!occasion || !mood || !weather) {
       Alert.alert('Missing information', 'Please choose occasion, mood, and weather');
@@ -466,6 +535,7 @@ const fetchTodayWeather = async () => {
       const data = await response.json();
       const returnedOutfits: OutfitSuggestion[] = data.outfits || [];
 
+      // if backend sends nothing back
       if (!returnedOutfits.length) {
         setSuggestions([]);
         setNoMatchMessage(
@@ -478,6 +548,7 @@ const fetchTodayWeather = async () => {
         return;
       }
 
+      // makes sure only outfits with actual selected items are kept
       const validOutfits = returnedOutfits.filter(
         (outfit) => outfit.selectedItemIds && outfit.selectedItemIds.length > 0
       );
@@ -508,6 +579,7 @@ const fetchTodayWeather = async () => {
   };
 
   useEffect(() => {
+    // tells voice assistant what it can do on this screen
     registerScreenActions('suggestions', {
       generateOutfit: async () => {
         await handleGetSuggestion();
@@ -537,6 +609,7 @@ const fetchTodayWeather = async () => {
   }, [registerScreenActions, suggestions, occasion, mood, weather]);
 
   useEffect(() => {
+    // current screen state for voice assistant
     registerScreenState('suggestions', {
       screenTitle: 'Suggestions',
       occasion,
@@ -557,6 +630,7 @@ const fetchTodayWeather = async () => {
     registerScreenState,
   ]);
 
+  // high contrast styling changes
   const screenDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -579,6 +653,7 @@ const fetchTodayWeather = async () => {
     ? { backgroundColor: '#000000' }
     : null;
 
+  // larger text styles if that setting is on
   const largeTitleStyle = largerTextEnabled ? { fontSize: 28 } : null;
   const largeSectionTitleStyle = largerTextEnabled ? { fontSize: 18 } : null;
   const largeLabelStyle = largerTextEnabled ? { fontSize: 15 } : null;
@@ -596,6 +671,7 @@ const fetchTodayWeather = async () => {
             <View style={[styles.titleLine, titleLineDynamicStyle]} />
           </View>
 
+          {/* voice helper text only if voice first mode is on */}
           {voiceFirstMode ? (
             <Text style={[styles.voiceHintText, textDynamicStyle, largeBodyStyle]}>
               Voice-first mode is on. You can say your occasion, mood, weather,
@@ -632,6 +708,7 @@ const fetchTodayWeather = async () => {
               </Picker>
             </View>
 
+            {/* toggle for auto weather */}
             <View style={[styles.toggleCard, cardDynamicStyle]}>
               <View style={styles.toggleTextWrap}>
                 <Text style={[styles.toggleTitle, textDynamicStyle, largeLabelStyle]}>
@@ -654,6 +731,7 @@ const fetchTodayWeather = async () => {
               />
             </View>
 
+            {/* if auto weather is off, user picks it manually */}
             {!useTodayWeather ? (
               <>
                 <Text style={[styles.label, textDynamicStyle, largeLabelStyle]}>
@@ -670,6 +748,7 @@ const fetchTodayWeather = async () => {
                 </View>
               </>
             ) : (
+              // otherwise show detected weather
               <View style={[styles.weatherBadgeBox, cardDynamicStyle]}>
                 <Text
                   style={[styles.weatherBadgeLabel, textDynamicStyle, largeBodyStyle]}
@@ -684,6 +763,7 @@ const fetchTodayWeather = async () => {
               </View>
             )}
 
+            {/* generate button */}
             <Pressable
               style={[styles.primaryButton, cardDynamicStyle]}
               onPress={handleGetSuggestion}
@@ -695,6 +775,7 @@ const fetchTodayWeather = async () => {
               </Text>
             </Pressable>
 
+            {/* clears current choices */}
             <Pressable
               style={[styles.secondaryButton, cardDynamicStyle]}
               onPress={handleClearSelections}
@@ -707,6 +788,7 @@ const fetchTodayWeather = async () => {
             </Pressable>
           </View>
 
+          {/* loading state while outfit generation is happening */}
           {loading ? (
             <View style={styles.statusBox}>
               <ActivityIndicator size="small" color="#253041" />
@@ -716,6 +798,7 @@ const fetchTodayWeather = async () => {
             </View>
           ) : null}
 
+          {/* loading wardrobe from storage/firebase */}
           {loadingWardrobe ? (
             <View style={styles.statusBox}>
               <ActivityIndicator size="small" color="#253041" />
@@ -725,12 +808,14 @@ const fetchTodayWeather = async () => {
             </View>
           ) : null}
 
+          {/* warning if user doesnt have enough item types */}
           {wardrobeItems.length > 0 && !hasEnoughWardrobeItems ? (
             <Text style={[styles.warningText, largeBodyStyle]}>
               {getMissingCategoryMessage() || 'Add more items for better recommendations.'}
             </Text>
           ) : null}
 
+          {/* warning if backend couldnt make a proper match */}
           {noMatchMessage ? (
             <Text style={[styles.warningText, largeBodyStyle]}>{noMatchMessage}</Text>
           ) : null}
@@ -744,6 +829,7 @@ const fetchTodayWeather = async () => {
               </Text>
               <View style={[styles.titleLine, titleLineDynamicStyle]} />
 
+              {/* horizontal swipe cards for outfit options */}
               <ScrollView
                 horizontal
                 pagingEnabled
@@ -770,6 +856,7 @@ const fetchTodayWeather = async () => {
                         {optionLabel}
                       </Text>
 
+                      {/* message for weaker fallback suggestions */}
                       {suggestion.weakRecommendation ? (
                         <Text style={[styles.weakText, textDynamicStyle, largeBodyStyle]}>
                           Limited suitable items found — showing best available option.
@@ -801,6 +888,7 @@ const fetchTodayWeather = async () => {
   );
 }
 
+// styles for this page
 const styles = StyleSheet.create({
   screen: {
     flex: 1,

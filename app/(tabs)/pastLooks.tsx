@@ -1,5 +1,11 @@
+// this helps know when this screen is active/focused
 import { useFocusEffect } from '@react-navigation/native';
+
+// used for reading looks out loud
 import * as Speech from 'expo-speech';
+
+// firestore stuff for getting and deleting past looks
+
 import {
   collection,
   deleteDoc,
@@ -7,7 +13,11 @@ import {
   getDocs,
   onSnapshot,
 } from 'firebase/firestore';
+
+// react hooks
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
+// screen ui parts
 import {
   ActivityIndicator,
   Alert,
@@ -17,13 +27,22 @@ import {
   Text,
   View,
 } from 'react-native';
+
+// safer image component for wardrobe images
 import SafeImage from '../../components/SafeImage';
+
+// settings from app settings
 import { useAppSettings } from '../../context/appSettingsContext';
+
+// voice assistant functions
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
+
+// firebase database
 import { db } from '../../firebaseConfig';
 
 type PastLook = {
   id: string;
+
   title: string;
   selectedItemIds: string[];
   reason: string;
@@ -44,27 +63,41 @@ type WardrobeItem = {
 };
 
 export default function PastLooksScreen() {
+  // stores all past looks from firestore
   const [pastLooks, setPastLooks] = useState<PastLook[]>([]);
+
+  // stores wardrobe items so each look can match to the real clothing items
   const [wardrobeItems, setWardrobeItems] = useState<WardrobeItem[]>([]);
+
+  // loading state while data is coming in
   const [loading, setLoading] = useState(true);
+
+  // keeps track of which look is being read aloud rn
   const [speakingId, setSpeakingId] = useState('');
 
+  // voice assistant functions for this page
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // settings used on this screen
   const {
     audioDescriptionsEnabled,
     highContrastMode,
     largerTextEnabled,
   } = useAppSettings();
 
+
+
+
   useEffect(() => {
+    // live listener for past looks collection
     const unsubscribePastLooks = onSnapshot(collection(db, 'pastLooks'), (snapshot) => {
       const looks = snapshot.docs.map((lookDoc) => ({
         id: lookDoc.id,
         ...lookDoc.data(),
       })) as PastLook[];
 
+      // sorts looks so newest one is first
       const sortedLooks = looks.sort((a, b) => {
         const dateA =
           typeof a.createdAt?.toDate === 'function'
@@ -83,6 +116,7 @@ export default function PastLooksScreen() {
       setLoading(false);
     });
 
+    // live listener for wardrobe items too
     const unsubscribeWardrobe = onSnapshot(collection(db, 'wardrobe'), (snapshot) => {
       const items = snapshot.docs.map((wardrobeDoc) => ({
         id: wardrobeDoc.id,
@@ -92,6 +126,9 @@ export default function PastLooksScreen() {
       setWardrobeItems(items);
     });
 
+
+
+    // cleanup when leaving screen
     return () => {
       unsubscribePastLooks();
       unsubscribeWardrobe();
@@ -99,12 +136,14 @@ export default function PastLooksScreen() {
     };
   }, []);
 
+  // registers this screen when user goes onto it
   useFocusEffect(
     useCallback(() => {
       registerScreen('pastLooks');
     }, [registerScreen])
   );
 
+  // turns the saved date into a nicer format
   const formatSavedDate = (createdAt: any) => {
     if (!createdAt) return 'Unknown date';
 
@@ -124,6 +163,7 @@ export default function PastLooksScreen() {
     }
   };
 
+  // matches item ids inside a look to actual wardrobe items
   const getItemsForLook = (selectedItemIds: string[]) => {
     return selectedItemIds.map((id) => {
       const matchedItem = wardrobeItems.find((item) => item.id === id);
@@ -132,6 +172,7 @@ export default function PastLooksScreen() {
   };
 
   const analytics = useMemo(() => {
+    // these count what shows up the most across old looks
     const colourCounts: Record<string, number> = {};
     const moodCounts: Record<string, number> = {};
     const occasionCounts: Record<string, number> = {};
@@ -159,6 +200,8 @@ export default function PastLooksScreen() {
       });
     });
 
+    // helper to get the top repeated value in each group
+
     const getTopValue = (map: Record<string, number>) => {
       const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
       return sorted.length ? sorted[0][0] : '—';
@@ -172,6 +215,7 @@ export default function PastLooksScreen() {
     };
   }, [pastLooks, wardrobeItems]);
 
+  // reads one past look aloud
   const handleReadLookAloud = (look: PastLook) => {
     if (!audioDescriptionsEnabled) {
       Alert.alert(
@@ -181,6 +225,7 @@ export default function PastLooksScreen() {
       return;
     }
 
+    // if same look is already being read, stop it
     if (speakingId === look.id) {
       Speech.stop();
       setSpeakingId('');
@@ -189,12 +234,14 @@ export default function PastLooksScreen() {
 
     const matchedItems = getItemsForLook(look.selectedItemIds);
 
+    // makes one sentence from the items in the look
     const itemText = matchedItems
       .map((item) =>
         item ? `${item.itemName}, ${item.colour}, ${item.category}` : 'Deleted item'
       )
       .join('. ');
 
+    // adds explanation tags if they exist
     const tagsText =
       look.explanationTags && look.explanationTags.length > 0
         ? `Key reasons: ${look.explanationTags.join('. ')}. `
@@ -217,6 +264,7 @@ export default function PastLooksScreen() {
     setSpeakingId(look.id);
   };
 
+  // deletes all past looks from firestore
   const clearPastLooks = async () => {
     try {
       const snapshot = await getDocs(collection(db, 'pastLooks'));
@@ -231,6 +279,7 @@ export default function PastLooksScreen() {
       }
 
       Speech.stop();
+
       setSpeakingId('');
       Alert.alert('Cleared', 'Past looks history has been removed.');
     } catch (error) {
@@ -239,16 +288,19 @@ export default function PastLooksScreen() {
     }
   };
 
+  // button uses this
   const handleClearHistory = () => {
     clearPastLooks();
   };
 
+  // reads the newest look
   const readLatestLook = async () => {
     const latestLook = pastLooks[0];
     if (!latestLook) return;
     handleReadLookAloud(latestLook);
   };
 
+  // reads a look by index number
   const readLookByIndex = async (index?: number) => {
     const safeIndex = index ?? 0;
     const look = pastLooks[safeIndex];
@@ -257,6 +309,7 @@ export default function PastLooksScreen() {
   };
 
   useEffect(() => {
+    // tells voice assistant what it can do on this page
     registerScreenActions('pastLooks', {
       readLatestLook: async () => {
         await readLatestLook();
@@ -264,7 +317,10 @@ export default function PastLooksScreen() {
 
       readLookByIndex: async (index?: number) => {
         await readLookByIndex(index);
+
       },
+
+
 
       clearPastLooksHistory: async () => {
         await clearPastLooks();
@@ -273,6 +329,7 @@ export default function PastLooksScreen() {
   }, [pastLooks, wardrobeItems, registerScreenActions]);
 
   useEffect(() => {
+    // gives current screen info to voice assistant
     registerScreenState('pastLooks', {
       lookCount: pastLooks.length,
       topColour: analytics.topColour,
@@ -283,6 +340,7 @@ export default function PastLooksScreen() {
     });
   }, [pastLooks, analytics, speakingId, registerScreenState]);
 
+  // style changes for contrast mode
   const containerDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -306,6 +364,8 @@ export default function PastLooksScreen() {
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
   const invertedTextStyle = { color: '#ffffff' };
 
+
+  // bigger text styles
   const largeTitleStyle = largerTextEnabled ? { fontSize: 32 } : null;
   const largeCardTitleStyle = largerTextEnabled ? { fontSize: 21 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 16, lineHeight: 24 } : null;
@@ -324,6 +384,7 @@ export default function PastLooksScreen() {
         </Text>
       </View>
 
+      {/* only shows analytics if there are saved looks */}
       {pastLooks.length > 0 ? (
         <View style={[styles.analyticsCard, cardDynamicStyle]}>
           <Text style={[styles.analyticsTitle, textDynamicStyle, largeButtonStyle]}>
@@ -370,6 +431,7 @@ export default function PastLooksScreen() {
         </View>
       ) : null}
 
+      {/* clears all look history */}
       <Pressable
         style={[styles.clearButton, darkPanelDynamicStyle]}
         onPress={handleClearHistory}
@@ -381,6 +443,7 @@ export default function PastLooksScreen() {
         </Text>
       </Pressable>
 
+      {/* loading state while firestore data is still coming in */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#111" />
@@ -397,6 +460,8 @@ export default function PastLooksScreen() {
         renderItem={({ item }) => {
           const matchedItems = getItemsForLook(item.selectedItemIds);
 
+
+          
           return (
             <View style={[styles.card, cardDynamicStyle]}>
               <View style={styles.cardHeader}>
@@ -407,6 +472,7 @@ export default function PastLooksScreen() {
                   <View style={[styles.smallUnderline, underlineDynamicStyle]} />
                 </View>
 
+                {/* only shows confidence if it exists */}
                 {item.confidence ? (
                   <View style={[styles.confidenceBadge, darkPanelDynamicStyle]}>
                     <Text
@@ -426,6 +492,7 @@ export default function PastLooksScreen() {
                 Generated on {formatSavedDate(item.createdAt)}
               </Text>
 
+              {/* these pills show occasion, mood and weather */}
               <View style={styles.metaRow}>
                 <View style={[styles.metaPill, cardDynamicStyle]}>
                   <Text style={[styles.metaPillText, textDynamicStyle, largeSmallStyle]}>
@@ -444,6 +511,7 @@ export default function PastLooksScreen() {
                 </View>
               </View>
 
+              {/* extra ai reason tags if there are any */}
               {item.explanationTags && item.explanationTags.length > 0 ? (
                 <View style={styles.tagsRow}>
                   {item.explanationTags.map((tag) => (
@@ -460,6 +528,7 @@ export default function PastLooksScreen() {
                 {item.reason}
               </Text>
 
+              {/* shows each clothing item that belongs to this look */}
               {matchedItems.map((lookItem, index) =>
                 lookItem ? (
                   <View key={lookItem.id} style={[styles.itemCard, cardDynamicStyle]}>
@@ -477,6 +546,7 @@ export default function PastLooksScreen() {
                     </Text>
                   </View>
                 ) : (
+                  // this shows if the old look had an item that got deleted later
                   <View key={`deleted-${index}`} style={[styles.deletedItemCard, cardDynamicStyle]}>
                     <Text
                       style={[styles.deletedItemTitle, textDynamicStyle, largeButtonStyle]}
@@ -492,6 +562,7 @@ export default function PastLooksScreen() {
                 )
               )}
 
+              {/* read aloud button only if audio descriptions are on */}
               {audioDescriptionsEnabled ? (
                 <View style={[styles.actionPanel, darkPanelDynamicStyle]}>
                   <Pressable
@@ -526,6 +597,7 @@ export default function PastLooksScreen() {
   );
 }
 
+// styles for the page
 const styles = StyleSheet.create({
   container: {
     flex: 1,

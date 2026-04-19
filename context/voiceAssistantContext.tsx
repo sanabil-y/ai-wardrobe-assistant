@@ -1,5 +1,9 @@
+// text to speech for assistant replies
 import * as Speech from 'expo-speech';
+
+// react + hooks for context
 import React, {
+
   createContext,
   ReactNode,
   useContext,
@@ -8,6 +12,8 @@ import React, {
   useState,
 } from 'react';
 
+// all possible intents the assistant can return
+// basically what actions it can trigger in the app
 type AssistantIntent =
   | {
       type: 'none';
@@ -31,6 +37,8 @@ type AssistantIntent =
       type: 'generate_outfit';
       payload?: Record<string, unknown>;
     }
+
+
   | {
       type: 'filter_wardrobe';
       payload: {
@@ -88,17 +96,22 @@ type AssistantIntent =
       type: 'edit_item';
       payload?: Record<string, unknown>;
     }
+
   | {
       type: 'save_item_changes';
       payload?: Record<string, unknown>;
     };
 
+// response shape from backend
 type VoiceAssistantResponse = {
   spokenReply: string;
   intent?: AssistantIntent;
 };
 
+// everything this context gives to the app
 type VoiceAssistantContextType = {
+
+
   voiceEnabled: boolean;
   isListening: boolean;
   isProcessing: boolean;
@@ -123,6 +136,7 @@ type VoiceAssistantContextType = {
   resetVoiceSession: () => void;
 };
 
+// creating the context
 const VoiceAssistantContext = createContext<VoiceAssistantContextType | undefined>(
   undefined
 );
@@ -131,9 +145,14 @@ type ProviderProps = {
   children: ReactNode;
 };
 
+// backend url (local server)
 const BACKEND_URL = 'http://192.168.0.83:3001';
 
+
+
+
 export function VoiceAssistantProvider({ children }: ProviderProps) {
+  // main state for voice assistant
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -142,17 +161,20 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
   const [currentScreen, setCurrentScreen] = useState('');
   const [sessionActive, setSessionActive] = useState(false);
 
+  // refs used so values persist without rerender issues
   const screenStatesRef = useRef<Record<string, Record<string, unknown>>>({});
   const screenActionsRef = useRef<
     Record<string, Record<string, (...args: any[]) => any>>
   >({});
   const currentScreenRef = useRef('');
 
+  // keeps track of which screen user is on
   const registerScreen = (screenName: string) => {
     currentScreenRef.current = screenName;
     setCurrentScreen(screenName);
   };
 
+  // saves extra state from screens (like filters etc)
   const registerScreenState = (
     screenName: string,
     state: Record<string, unknown>
@@ -160,6 +182,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     screenStatesRef.current[screenName] = state;
   };
 
+  // registers actions each screen can perform (like navigate, save etc)
   const registerScreenActions = (
     screenName: string,
     actions: Record<string, (...args: any[]) => any>
@@ -167,10 +190,12 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     screenActionsRef.current[screenName] = actions;
   };
 
+  // stops any ongoing assistant speech
   const stopAssistantSpeech = () => {
     Speech.stop();
   };
 
+  // resets EVERYTHING about voice assistant (like fresh start)
   const resetVoiceSession = () => {
     Speech.stop();
     setVoiceEnabled(false);
@@ -185,6 +210,8 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     screenActionsRef.current = {};
   };
 
+
+  // sends user voice text to backend
   const sendMessageToAssistant = async (
     message: string
   ): Promise<VoiceAssistantResponse> => {
@@ -193,9 +220,12 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     setTranscript(message);
 
     try {
+      // gets current screen safely
       const activeScreen = currentScreenRef.current || currentScreen;
 
+      // gets screen state if exists
       const screenState = activeScreen
+
         ? screenStatesRef.current[activeScreen] || {}
         : {};
 
@@ -227,6 +257,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     } catch (error) {
       console.error('Voice assistant error:', error);
 
+      // fallback if something breaks
       const fallback = {
         spokenReply: 'Sorry, something went wrong with the voice assistant.',
         intent: { type: 'none' } as AssistantIntent,
@@ -237,17 +268,22 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     } finally {
       setIsProcessing(false);
     }
+
+
   };
 
+  // executes whatever action the assistant decided
   const executeIntent = async (intent?: AssistantIntent) => {
     if (!intent || intent.type === 'none') return;
 
     const activeScreen = currentScreenRef.current || currentScreen;
 
+    // actions for current screen
     const currentActions = activeScreen
       ? screenActionsRef.current[activeScreen] || {}
       : {};
 
+    // fallback navigation (in case current screen doesnt have it)
     const allRegisteredActions = Object.values(screenActionsRef.current);
 
     const fallbackNavigate = allRegisteredActions.find(
@@ -255,6 +291,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     )?.navigateToRoute;
 
     try {
+      // navigation
       if (intent.type === 'navigate') {
         const navigateFn = currentActions.navigateToRoute || fallbackNavigate;
 
@@ -264,6 +301,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
         }
       }
 
+      // rest just map intent → screen action
       if (
         intent.type === 'set_outfit_context' &&
         currentActions.setOutfitContext
@@ -311,6 +349,9 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
         return;
       }
 
+
+
+
       if (
         intent.type === 'analyze_item_image' &&
         currentActions.analyzeCurrentImage
@@ -339,6 +380,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
         return;
       }
 
+      
       if (
         intent.type === 'save_item_changes' &&
         currentActions.saveEditedItem
@@ -351,6 +393,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
     }
   };
 
+  // memo so context doesnt rerender too much
   const value = useMemo(
     () => ({
       voiceEnabled,
@@ -391,6 +434,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
   );
 }
 
+// custom hook so easier to use this context
 export function useVoiceAssistant() {
   const context = useContext(VoiceAssistantContext);
 

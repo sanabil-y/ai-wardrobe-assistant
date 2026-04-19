@@ -1,7 +1,19 @@
+// used for reading outfit details aloud
 import * as Speech from 'expo-speech';
+
+// react + local state
 import React, { useState } from 'react';
+
+
+
+
+// ui bits for the card
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+// gets settings like contrast mode and audio descriptions
 import { useAppSettings } from '../context/appSettingsContext';
+
+// safer image component
 import SafeImage from './SafeImage';
 
 type WardrobeItem = {
@@ -39,14 +51,18 @@ export default function OutfitOptionCard({
   onDislike,
   explanationTags = [],
 }: OutfitOption) {
+  // tracks if speech is currently playing
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // app settings used for styling + read aloud feature
   const { highContrastMode, largerTextEnabled, audioDescriptionsEnabled } =
     useAppSettings();
 
+  // changes badge colour depending on confidence score
   const getConfidenceColor = (value: number) => {
     if (highContrastMode) {
       return '#000000';
+
     }
 
     if (value >= 80) return '#2d6a4f';
@@ -54,14 +70,17 @@ export default function OutfitOptionCard({
     return '#b00020';
   };
 
+  // gets only the items for one category
   const groupItems = (category: string) =>
     selectedItems.filter((item) => item.category.toLowerCase() === category);
 
+  // reads whole outfit card aloud
   const handleReadAloud = () => {
     if (!audioDescriptionsEnabled) {
       return;
     }
 
+    // press again to stop it
     if (isSpeaking) {
       Speech.stop();
       setIsSpeaking(false);
@@ -89,8 +108,10 @@ export default function OutfitOptionCard({
     setIsSpeaking(true);
   };
 
+  // order the sections in a nicer outfit order
   const orderedCategories = ['top', 'bottom', 'shoes', 'outerwear', 'dress'];
 
+  // dynamic styles for accessibility mode
   const cardDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff', borderColor: '#000000' }
     : null;
@@ -118,6 +139,7 @@ export default function OutfitOptionCard({
   const titleLineDynamicText = highContrastMode ? { color: '#000000' } : null;
   const invertedTextStyle = { color: '#ffffff' };
 
+  // larger text styles if that setting is on
   const largeTitleStyle = largerTextEnabled ? { fontSize: 20 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 15, lineHeight: 22 } : null;
   const largeSmallStyle = largerTextEnabled ? { fontSize: 13, lineHeight: 18 } : null;
@@ -130,6 +152,7 @@ export default function OutfitOptionCard({
           {title}
         </Text>
 
+        {/* confidence badge */}
         <View
           style={[
             styles.badge,
@@ -142,6 +165,8 @@ export default function OutfitOptionCard({
         </View>
       </View>
 
+
+      {/* little reason tags if they exist */}
       {explanationTags.length > 0 ? (
         <View style={styles.tagsRow}>
           {explanationTags.map((tag) => (
@@ -155,6 +180,7 @@ export default function OutfitOptionCard({
       ) : null}
 
       <View style={[styles.mainOutfitBox, softCardDynamicStyle]}>
+        {/* goes through categories in outfit order */}
         {orderedCategories.map((cat) => {
           const items = groupItems(cat);
           if (items.length === 0) return null;
@@ -182,6 +208,7 @@ export default function OutfitOptionCard({
           );
         })}
 
+        {/* like and dislike buttons */}
         <View style={styles.actionsOuterRow}>
           <Pressable
             style={[
@@ -230,6 +257,7 @@ export default function OutfitOptionCard({
           </Pressable>
         </View>
 
+        {/* save and read buttons */}
         <View style={styles.actionsOuterRow}>
           <Pressable
             style={[
@@ -254,6 +282,7 @@ export default function OutfitOptionCard({
             </Text>
           </Pressable>
 
+          {/* only shows if audio descriptions are enabled */}
           {audioDescriptionsEnabled ? (
             <Pressable
               style={[styles.actionButton, styles.readButton, buttonDynamicStyle]}
@@ -274,6 +303,7 @@ export default function OutfitOptionCard({
         </View>
       </View>
 
+      {/* explanation at the bottom */}
       <View style={styles.reasonBlock}>
         <Text style={[styles.subtitle, titleLineDynamicText, largeButtonStyle]}>
           Why this works
@@ -285,6 +315,9 @@ export default function OutfitOptionCard({
     </View>
   );
 }
+
+// styles for outfit option card
+
 
 const styles = StyleSheet.create({
   card: {

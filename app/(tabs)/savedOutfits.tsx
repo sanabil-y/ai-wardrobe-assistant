@@ -1,4 +1,10 @@
+// used for reading item details out loud
 import * as Speech from 'expo-speech';
+
+
+
+
+// firestore stuff for saved outfits live updates and deleting
 import {
   collection,
   deleteDoc,
@@ -7,9 +13,17 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
+
+// react hooks
 import React, { useEffect, useMemo, useState } from 'react';
+
+// helps know when this screen is focused
 import { useFocusEffect } from '@react-navigation/native';
+
+// useCallback imported separate here
 import { useCallback } from 'react';
+
+// screen ui parts
 import {
   ActivityIndicator,
   Alert,
@@ -21,10 +35,20 @@ import {
   Text,
   View,
 } from 'react-native';
+
+// safer image component for clothing images
 import SafeImage from '../../components/SafeImage';
+
+// app settings context
 import { useAppSettings } from '../../context/appSettingsContext';
+
+// voice assistant context
 import { useVoiceAssistant } from '../../context/voiceAssistantContext';
+
+// firebase db
 import { db } from '../../firebaseConfig';
+
+
 
 type SavedOutfit = {
   id: string;
@@ -49,33 +73,47 @@ type WardrobeItem = {
 };
 
 export default function SavedOutfitsScreen() {
+  // all saved outfits from firestore
   const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
+
+  // wardrobe items so saved outfits can match to real clothing items
   const [wardrobeItems, setWardrobeItems] = useState<WardrobeItem[]>([]);
+
+  // stores item user clicked, used in the modal
   const [selectedItem, setSelectedItem] = useState<WardrobeItem | null>(null);
+
+  // loading state for saved outfits
   const [loadingSavedOutfits, setLoadingSavedOutfits] = useState(true);
+
+  // just checks if speech is playing rn
   const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // voice assistant functions for this screen
   const { registerScreen, registerScreenActions, registerScreenState } =
     useVoiceAssistant();
 
+  // accessibility settings used on this page
   const {
     audioDescriptionsEnabled,
     highContrastMode,
     largerTextEnabled,
   } = useAppSettings();
 
-  useEffect(() => {
+    useEffect(() => {
+    // query to get newest saved outfits first
     const savedQuery = query(
       collection(db, 'savedOutfits'),
       orderBy('createdAt', 'desc')
     );
 
+    // live listener for saved outfits
     const unsubscribeSaved = onSnapshot(savedQuery, (snapshot) => {
       const saved = snapshot.docs.map((savedDoc) => ({
         id: savedDoc.id,
         ...savedDoc.data(),
       })) as SavedOutfit[];
 
+      // extra sorting just to make sure newest stays first
       const sortedSaved = saved.sort((a, b) => {
         const dateA =
           typeof a.createdAt?.toDate === 'function'
@@ -94,6 +132,7 @@ export default function SavedOutfitsScreen() {
       setLoadingSavedOutfits(false);
     });
 
+    // live listener for wardrobe too
     const unsubscribeWardrobe = onSnapshot(collection(db, 'wardrobe'), (snapshot) => {
       const wardrobe = snapshot.docs.map((wardrobeDoc) => ({
         id: wardrobeDoc.id,
@@ -103,6 +142,9 @@ export default function SavedOutfitsScreen() {
       setWardrobeItems(wardrobe);
     });
 
+
+
+    // cleanup when leaving screen
     return () => {
       unsubscribeSaved();
       unsubscribeWardrobe();
@@ -110,12 +152,14 @@ export default function SavedOutfitsScreen() {
     };
   }, []);
 
+  // register this page when user opens it
   useFocusEffect(
     useCallback(() => {
       registerScreen('savedOutfits');
     }, [registerScreen])
   );
 
+  // formats saved date into shorter uk style
   const formatSavedDate = (createdAt: any) => {
     if (!createdAt) return '';
 
@@ -134,11 +178,13 @@ export default function SavedOutfitsScreen() {
     }
   };
 
+  // gets wardrobe items that belong to one saved outfit
   const getItemsForOutfit = (selectedItemIds: string[]) => {
     return wardrobeItems.filter((item) => selectedItemIds.includes(item.id));
   };
 
   const savedStats = useMemo(() => {
+    // counts patterns across saved outfits
     const occasions: Record<string, number> = {};
     const moods: Record<string, number> = {};
     const colours: Record<string, number> = {};
@@ -161,6 +207,7 @@ export default function SavedOutfitsScreen() {
       });
     });
 
+    // gets the most repeated one from each object
     const getTopLabel = (obj: Record<string, number>) => {
       const entries = Object.entries(obj).sort((a, b) => b[1] - a[1]);
       return entries.length ? entries[0][0] : '';
@@ -173,6 +220,7 @@ export default function SavedOutfitsScreen() {
     };
   }, [savedOutfits, wardrobeItems]);
 
+  // removes one saved outfit from favourites
   const handleRemoveSavedOutfit = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'savedOutfits', id));
@@ -183,6 +231,8 @@ export default function SavedOutfitsScreen() {
     }
   };
 
+
+  // reads selected item aloud inside modal
   const handleReadAloud = () => {
     if (!audioDescriptionsEnabled) {
       Alert.alert(
@@ -193,6 +243,8 @@ export default function SavedOutfitsScreen() {
     }
 
     if (!selectedItem) return;
+
+    // pressing again stops it if already speaking
 
     if (isSpeaking) {
       Speech.stop();
@@ -213,6 +265,7 @@ export default function SavedOutfitsScreen() {
     setIsSpeaking(true);
   };
 
+  // opens a saved outfit by index and shows first matched item in modal
   const openSavedOutfitByIndex = async (index?: number) => {
     const safeIndex = index ?? 0;
     const savedOutfit = savedOutfits[safeIndex];
@@ -226,7 +279,9 @@ export default function SavedOutfitsScreen() {
     setSelectedItem(matchedItems[0]);
   };
 
+
   useEffect(() => {
+    // actions voice assistant can do here
     registerScreenActions('savedOutfits', {
       openSavedOutfitByIndex: async (index?: number) => {
         await openSavedOutfitByIndex(index);
@@ -243,6 +298,7 @@ export default function SavedOutfitsScreen() {
   }, [savedOutfits, registerScreenActions]);
 
   useEffect(() => {
+    // current page state for voice assistant
     registerScreenState('savedOutfits', {
       savedCount: savedOutfits.length,
       selectedItemName: selectedItem?.itemName || '',
@@ -252,6 +308,7 @@ export default function SavedOutfitsScreen() {
     });
   }, [savedOutfits, selectedItem, savedStats, registerScreenState]);
 
+  // high contrast style changes
   const containerDynamicStyle = highContrastMode
     ? { backgroundColor: '#ffffff' }
     : null;
@@ -272,7 +329,7 @@ export default function SavedOutfitsScreen() {
     ? { backgroundColor: '#ffffff', borderColor: '#000000' }
     : null;
 
-  const underlineDynamicStyle = highContrastMode
+  const underlineDynamicStyle = highContrastMode 
     ? { backgroundColor: '#000000' }
     : null;
 
@@ -283,6 +340,7 @@ export default function SavedOutfitsScreen() {
   const textDynamicStyle = highContrastMode ? { color: '#000000' } : null;
   const invertedTextStyle = { color: '#ffffff' };
 
+  // larger text  styles
   const largeTitleStyle = largerTextEnabled ? { fontSize: 32 } : null;
   const largeCardTitleStyle = largerTextEnabled ? { fontSize: 21 } : null;
   const largeBodyStyle = largerTextEnabled ? { fontSize: 16, lineHeight: 24 } : null;
@@ -301,6 +359,7 @@ export default function SavedOutfitsScreen() {
         </Text>
       </View>
 
+      {/* only shows these stats if there are saved outfits */}
       {savedOutfits.length > 0 ? (
         <View style={[styles.summaryCard, cardDynamicStyle]}>
           <Text style={[styles.summaryTitle, textDynamicStyle, largeButtonStyle]}>
@@ -349,6 +408,7 @@ export default function SavedOutfitsScreen() {
         </View>
       ) : null}
 
+      {/* loading while firestore data comes in */}
       {loadingSavedOutfits ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#111" />
@@ -357,6 +417,7 @@ export default function SavedOutfitsScreen() {
           </Text>
         </View>
       ) : null}
+ 
 
       <FlatList
         data={savedOutfits}
@@ -375,6 +436,7 @@ export default function SavedOutfitsScreen() {
                   <View style={[styles.smallUnderline, underlineDynamicStyle]} />
                 </View>
 
+                {/* date badge only if date exists */}
                 {formatSavedDate(item.createdAt) ? (
                   <View style={[styles.dateBadge, darkPanelDynamicStyle]}>
                     <Text
@@ -390,6 +452,7 @@ export default function SavedOutfitsScreen() {
                 ) : null}
               </View>
 
+              {/* outfit info pills */}
               <View style={styles.metaRow}>
                 <View style={[styles.metaPill, cardDynamicStyle]}>
                   <Text style={[styles.metaPillText, textDynamicStyle, largeSmallStyle]}>
@@ -415,6 +478,7 @@ export default function SavedOutfitsScreen() {
               {matchedItems.length > 0 ? (
                 <View style={styles.itemsWrap}>
                   {matchedItems.map((clothingItem) => (
+                    // press item to open bigger modal with details
                     <Pressable
                       key={clothingItem.id}
                       style={[styles.itemCard, cardDynamicStyle]}
@@ -443,6 +507,7 @@ export default function SavedOutfitsScreen() {
                   ))}
                 </View>
               ) : (
+                // shown if linked wardrobe items got deleted
                 <View style={[styles.emptyMatchedCard, cardDynamicStyle]}>
                   <Text
                     style={[styles.emptyMatchedTitle, textDynamicStyle, largeButtonStyle]}
@@ -486,6 +551,7 @@ export default function SavedOutfitsScreen() {
         }
       />
 
+      {/* modal opens when one clothing item is selected */}
       <Modal
         visible={selectedItem !== null}
         transparent
@@ -495,6 +561,7 @@ export default function SavedOutfitsScreen() {
           setIsSpeaking(false);
           setSelectedItem(null);
         }}
+
       >
         <View style={[styles.modalOverlay, modalOverlayDynamicStyle]}>
           <View style={[styles.modalContent, cardDynamicStyle]}>
@@ -537,6 +604,7 @@ export default function SavedOutfitsScreen() {
                 ) : null}
 
                 <View style={[styles.modalActionPanel, darkPanelDynamicStyle]}>
+                  {/* read aloud button only if enabled in settings */}
                   {audioDescriptionsEnabled ? (
                     <Pressable
                       style={[styles.speakButton, whiteButtonDynamicStyle]}
@@ -576,8 +644,14 @@ export default function SavedOutfitsScreen() {
       </Modal>
     </View>
   );
+  
 }
 
+
+
+
+
+// styles for this screen
 const styles = StyleSheet.create({
   container: {
     flex: 1,

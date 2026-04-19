@@ -1,23 +1,36 @@
 require('dotenv').config();
 
+// express for backend routes
 const express = require('express');
+
+// lets frontend talk to backend
 const cors = require('cors');
+
+// openai sdk
 const OpenAI = require('openai');
 
 const app = express();
+
+// allows cross origin requests
 app.use(cors());
+
+// lets backend accept json, bigger limit because of image/url payloads
 app.use(express.json({ limit: '10mb' }));
 
+// creating openai client using api key from env file
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// just a simple test route to check backend is alive
 app.get('/test', (req, res) => {
   res.json({ message: 'Backend works' });
 });
 
+// makes text lower case and removes spaces around it
 const normalise = (value = '') => value.toString().trim().toLowerCase();
 
+// makes text look cleaner like title case
 const titleCase = (value = '') =>
   value
     .toString()
@@ -27,9 +40,11 @@ const titleCase = (value = '') =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(' ');
 
+// tries to force clothing categories into one standard version
 const normaliseCategory = (cat = '') => {
   const c = normalise(cat);
 
+  // top type words
   if (
     c.includes('shirt') ||
     c.includes('top') ||
@@ -38,6 +53,8 @@ const normaliseCategory = (cat = '') => {
     c.includes('blouse')
   )
     return 'top';
+
+  // bottom type words
   if (
     c.includes('trouser') ||
     c.includes('jean') ||
@@ -46,6 +63,8 @@ const normaliseCategory = (cat = '') => {
     c.includes('bottom')
   )
     return 'bottom';
+
+  // outerwear words
   if (
     c.includes('jacket') ||
     c.includes('coat') ||
@@ -55,6 +74,8 @@ const normaliseCategory = (cat = '') => {
     c.includes('outerwear')
   )
     return 'outerwear';
+
+  // shoe words
   if (
     c.includes('shoe') ||
     c.includes('trainer') ||
@@ -65,7 +86,10 @@ const normaliseCategory = (cat = '') => {
     c.includes('flat')
   )
     return 'shoes';
+
   if (c.includes('dress')) return 'dress';
+
+  // accessory words
   if (
     c.includes('bag') ||
     c.includes('accessory') ||
@@ -74,9 +98,11 @@ const normaliseCategory = (cat = '') => {
   )
     return 'accessory';
 
+  // fallback if none matched
   return c || 'other';
 };
 
+// joins main item fields into one searchable text string
 const getItemText = (item = {}) =>
   [
     normalise(item.itemName),
@@ -90,20 +116,25 @@ const getItemText = (item = {}) =>
     .join(' ')
     .trim();
 
+// creates one stable key from outfit item ids
 const getOutfitKeyFromIds = (ids = []) => [...ids].sort().join('|');
 
+// tries to safely pull json object out of model response
 const extractJsonObject = (text = '') => {
   try {
     return JSON.parse(text);
   } catch {
     const match = text.match(/\{[\s\S]*\}/);
+
     if (!match) {
       throw new Error('No JSON object found in model response');
     }
+
     return JSON.parse(match[0]);
   }
 };
 
+// some colour words mapped into one cleaner standard
 const COLOUR_ALIASES = {
   gray: 'grey',
   charcoal: 'grey',
@@ -122,6 +153,7 @@ const COLOUR_ALIASES = {
   denim: 'blue',
 };
 
+// colour groups used later for harmony scoring
 const NEUTRAL_COLOURS = new Set([
   'black',
   'white',
@@ -131,6 +163,7 @@ const NEUTRAL_COLOURS = new Set([
   'brown',
   'navy',
 ]);
+
 const EARTH_COLOURS = new Set(['beige', 'cream', 'brown', 'green']);
 const BRIGHT_COLOURS = new Set(['red', 'yellow', 'orange', 'pink', 'purple']);
 const COOL_COLOURS = new Set(['blue', 'navy', 'green', 'purple', 'grey']);
@@ -144,6 +177,7 @@ const WARM_COLOURS = new Set([
   'pink',
 ]);
 
+// these colour pairs usually clash hard
 const HARD_CLASH_PAIRS = [
   ['red', 'green'],
   ['yellow', 'purple'],
@@ -152,6 +186,7 @@ const HARD_CLASH_PAIRS = [
   ['yellow', 'pink'],
 ];
 
+// these tend to work well together
 const GOOD_PAIRS = [
   ['black', 'white'],
   ['black', 'grey'],
@@ -171,6 +206,7 @@ const GOOD_PAIRS = [
   ['green', 'cream'],
 ];
 
+// turns diff shades / names into one standard colour label
 const canonicalColour = (colour = '') => {
   const c = normalise(colour);
   if (!c) return '';
@@ -196,12 +232,15 @@ const canonicalColour = (colour = '') => {
   if (c.includes('purple') || c.includes('lilac') || c.includes('lavender'))
     return 'purple';
 
+  // fallback just takes first word
   return c.split(' ')[0];
 };
 
+// checks if colour is neutral
 const isNeutralColour = (colour = '') =>
   NEUTRAL_COLOURS.has(canonicalColour(colour));
 
+// checks if pair is in good pair list
 const isGoodPair = (a = '', b = '') => {
   const first = canonicalColour(a);
   const second = canonicalColour(b);
@@ -211,6 +250,7 @@ const isGoodPair = (a = '', b = '') => {
   );
 };
 
+// checks if pair is one of the bad clash pairs
 const isHardClash = (a = '', b = '') => {
   const first = canonicalColour(a);
   const second = canonicalColour(b);
@@ -220,6 +260,7 @@ const isHardClash = (a = '', b = '') => {
   );
 };
 
+// gives a harmony score for the colours in one outfit
 const getColourHarmonyScore = (colours = []) => {
   if (!colours.length) return 0;
 
@@ -232,16 +273,19 @@ const getColourHarmonyScore = (colours = []) => {
 
       if (!a || !b) continue;
 
+      // same colour can look cohesive
       if (a === b) {
         score += 5;
         continue;
       }
 
+      // hard clash gets strong minus
       if (isHardClash(a, b)) {
         score -= 10;
         continue;
       }
 
+      // neutral with almost anything usually works
       if (isNeutralColour(a) || isNeutralColour(b)) {
         score += 4;
         continue;
@@ -272,6 +316,7 @@ const getColourHarmonyScore = (colours = []) => {
         continue;
       }
 
+      // if nothing good matched, small penalty
       score -= 4;
     }
   }
@@ -279,14 +324,17 @@ const getColourHarmonyScore = (colours = []) => {
   return score;
 };
 
+// helper to check if text contains any word from a list
 const textHasAny = (text, words) => words.some((word) => text.includes(word));
 
+// tries to work out style signals from each clothing item
 const inferItemSignals = (item = {}) => {
   const text = getItemText(item);
   const explicitOccasion = normalise(item.occasion);
   const category = normaliseCategory(item.category);
   const colour = canonicalColour(item.colour);
 
+  // lots of little booleans so later scoring is easier
   const isJeans = textHasAny(text, ['jean', 'denim']);
   const isHoodie = textHasAny(text, ['hoodie', 'sweatshirt']);
   const isJogger = textHasAny(text, [
@@ -316,16 +364,22 @@ const inferItemSignals = (item = {}) => {
     'slack',
   ]);
   const isSkirt = textHasAny(text, ['skirt']);
+
+  // tries to split dress into casual or dressy
   const isDressyDress =
     category === 'dress' &&
     textHasAny(text, ['formal', 'elegant', 'satin', 'midi', 'maxi', 'evening']);
+
   const isCasualDress =
     category === 'dress' &&
     textHasAny(text, ['casual', 'cotton', 'knit', 'day dress', 't-shirt dress']);
+
   const isTee = textHasAny(text, ['t-shirt', 'tee']);
   const isKnit = textHasAny(text, ['knit', 'jumper', 'sweater', 'cardigan']);
   const isCoat = textHasAny(text, ['coat', 'trench', 'wool coat']);
   const isPuffer = textHasAny(text, ['puffer']);
+
+  // sporty / structured / party type vibes
   const isSporty =
     textHasAny(text, [
       'gym',
@@ -335,6 +389,7 @@ const inferItemSignals = (item = {}) => {
       'training',
       'workout',
     ]) || isLegging || isJogger || isTrainer;
+
   const isStructured =
     isBlazer ||
     isShirt ||
@@ -342,6 +397,7 @@ const inferItemSignals = (item = {}) => {
     isLoafer ||
     isHeel ||
     textHasAny(text, ['tailored', 'structured', 'formal', 'smart']);
+
   const isParty =
     textHasAny(text, [
       'party',
@@ -353,6 +409,7 @@ const inferItemSignals = (item = {}) => {
       'sparkle',
       'sequin',
     ]) || isHeel;
+
   const isCasual =
     isTee ||
     isJeans ||
@@ -360,9 +417,11 @@ const inferItemSignals = (item = {}) => {
     isKnit ||
     isCasualDress ||
     textHasAny(text, ['casual', 'relaxed', 'everyday']);
+
   const isHeavy =
     isCoat || isPuffer || isBoot || textHasAny(text, ['wool', 'thick', 'heavy']);
 
+  // style scores for each occasion lane
   const styleScores = {
     formal: 0,
     work: 0,
@@ -371,6 +430,7 @@ const inferItemSignals = (item = {}) => {
     sport: 0,
   };
 
+  // if item already had an explicit occasion, use that too
   if (explicitOccasion && styleScores[explicitOccasion] !== undefined) {
     styleScores[explicitOccasion] += 6;
   }
@@ -392,6 +452,7 @@ const inferItemSignals = (item = {}) => {
     styleScores.sport += 7;
   }
 
+  // some item types clearly hurt certain occasions
   if (isJeans || isHoodie || isJogger || isTrainer) {
     styleScores.formal -= 6;
     styleScores.work -= 4;
@@ -431,6 +492,7 @@ const inferItemSignals = (item = {}) => {
     styleScores.formal -= 3;
   }
 
+  // ranking styles so we know top 2
   const rankedStyles = Object.entries(styleScores).sort((a, b) => b[1] - a[1]);
   const primaryStyle = rankedStyles[0][0];
   const secondaryStyle = rankedStyles[1][0];
@@ -468,6 +530,7 @@ const inferItemSignals = (item = {}) => {
   };
 };
 
+// checks if one item is allowed for the requested occasion
 const isItemAllowedForOccasion = (signals, requestedOccasion) => {
   const { category } = signals;
 
@@ -480,6 +543,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       signals.isJeans
     )
       return false;
+
     if (
       category === 'shoes' &&
       !(
@@ -491,6 +555,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'outerwear' &&
       !(
@@ -501,6 +566,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'top' &&
       !(
@@ -511,6 +577,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'bottom' &&
       !(
@@ -521,12 +588,14 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'dress' &&
       signals.styleScores.formal < 4 &&
       signals.styleScores.party < 3
     )
       return false;
+
     return true;
   }
 
@@ -538,7 +607,9 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       signals.isLegging
     )
       return false;
+
     if (signals.isJeans && signals.explicitOccasion !== 'work') return false;
+
     if (
       category === 'shoes' &&
       !(
@@ -551,6 +622,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'outerwear' &&
       !(
@@ -562,6 +634,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'top' &&
       !(
@@ -572,6 +645,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'bottom' &&
       !(
@@ -582,24 +656,28 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'dress' &&
       signals.styleScores.work < 4 &&
       signals.styleScores.formal < 4
     )
       return false;
+
     return true;
   }
 
   if (requestedOccasion === 'casual') {
     if (signals.isBlazer && signals.explicitOccasion !== 'casual') return false;
     if (signals.isHeel && signals.explicitOccasion !== 'casual') return false;
+
     if (
       signals.isTrouser &&
       signals.explicitOccasion !== 'casual' &&
       !signals.isKnit
     )
       return false;
+
     if (
       category === 'shoes' &&
       !(
@@ -610,6 +688,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'outerwear' &&
       !(
@@ -620,6 +699,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'top' &&
       !(
@@ -630,6 +710,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'bottom' &&
       !(
@@ -639,12 +720,15 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (category === 'dress' && signals.styleScores.casual < 4) return false;
+
     return true;
   }
 
   if (requestedOccasion === 'party') {
     if (signals.isJogger || signals.isLegging) return false;
+
     if (
       category === 'shoes' &&
       !(
@@ -655,6 +739,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'outerwear' &&
       !(
@@ -665,6 +750,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'top' &&
       !(
@@ -675,6 +761,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'bottom' &&
       !(
@@ -685,12 +772,14 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
       )
     )
       return false;
+
     if (
       category === 'dress' &&
       signals.styleScores.party < 4 &&
       signals.styleScores.formal < 4
     )
       return false;
+
     return true;
   }
 
@@ -703,6 +792,7 @@ const isItemAllowedForOccasion = (signals, requestedOccasion) => {
   return true;
 };
 
+// checks if item fits weather
 const isItemAllowedForWeather = (signals, requestedWeather) => {
   if (requestedWeather === 'warm' && signals.isHeavy) return false;
   if (requestedWeather === 'warm' && signals.isCoat) return false;
@@ -714,6 +804,7 @@ const isItemAllowedForWeather = (signals, requestedWeather) => {
   return true;
 };
 
+// bonus points depending on mood
 const buildMoodBonus = (signals, requestedMood) => {
   let score = 0;
   const notes = [];
@@ -772,11 +863,13 @@ const buildMoodBonus = (signals, requestedMood) => {
   return { score, notes };
 };
 
+// occasion base score taken from style scores
 const getOccasionBaseScore = (signals, requestedOccasion) => {
   const value = signals.styleScores[requestedOccasion] || 0;
   return value * 3;
 };
 
+// weather bonus notes
 const getWeatherBonus = (signals, requestedWeather) => {
   let score = 0;
   const notes = [];
@@ -812,6 +905,7 @@ const getWeatherBonus = (signals, requestedWeather) => {
   return { score, notes };
 };
 
+// gives item bonus based on past likes/dislikes
 const getPreferenceBonus = (signals, feedbackSummary) => {
   const likedColours = (feedbackSummary.likedColours || []).map(canonicalColour);
   const dislikedColours = (feedbackSummary.dislikedColours || []).map(
@@ -851,12 +945,14 @@ const getPreferenceBonus = (signals, feedbackSummary) => {
     notes.push('-4 previously disliked category');
   }
 
+  // tiny boost just because those prefs exist
   if (preferredOccasions.length) score += 1;
   if (preferredMoods.length) score += 1;
 
   return { score, notes };
 };
 
+// enriches items with signals + score + score notes
 const enrichWardrobeItems = (
   wardrobeItems = [],
   requestedOccasion,
@@ -869,6 +965,7 @@ const enrichWardrobeItems = (
       const signals = inferItemSignals(item);
       const itemNotes = [];
 
+      // remove items that dont fit the request
       if (!isItemAllowedForOccasion(signals, requestedOccasion)) {
         return null;
       }
@@ -895,6 +992,7 @@ const enrichWardrobeItems = (
       score += preference.score;
       itemNotes.push(...preference.notes);
 
+      // main outfit pieces matter more
       if (
         signals.category === 'top' ||
         signals.category === 'bottom' ||
@@ -948,6 +1046,7 @@ const enrichWardrobeItems = (
     .sort((a, b) => b.score - a.score);
 };
 
+// filters shoe choices based on occasion
 const getCompatibleShoes = (items, requestedOccasion) => {
   return items.filter((item) => {
     const s = item.signals;
@@ -961,6 +1060,7 @@ const getCompatibleShoes = (items, requestedOccasion) => {
         s.isBoot ||
         s.styleScores.formal >= 4
       );
+
     if (requestedOccasion === 'work')
       return (
         s.isLoafer ||
@@ -969,6 +1069,7 @@ const getCompatibleShoes = (items, requestedOccasion) => {
         s.isBoot ||
         s.styleScores.work >= 4
       );
+
     if (requestedOccasion === 'casual')
       return (
         s.isTrainer ||
@@ -976,6 +1077,7 @@ const getCompatibleShoes = (items, requestedOccasion) => {
         s.isFlat ||
         s.styleScores.casual >= 4
       );
+
     if (requestedOccasion === 'party')
       return (
         s.isHeel ||
@@ -983,12 +1085,14 @@ const getCompatibleShoes = (items, requestedOccasion) => {
         s.isFlat ||
         s.styleScores.party >= 4
       );
+
     if (requestedOccasion === 'sport') return s.isTrainer;
 
     return true;
   });
 };
 
+// outerwear only really matters for some weathers
 const getCompatibleOuterwear = (items, requestedOccasion, requestedWeather) => {
   if (!['cold', 'rainy', 'mild'].includes(requestedWeather)) return [];
 
@@ -1004,6 +1108,7 @@ const getCompatibleOuterwear = (items, requestedOccasion, requestedWeather) => {
         s.styleScores.formal >= 4 ||
         s.styleScores.work >= 4
       );
+
     if (requestedOccasion === 'work')
       return (
         s.isBlazer ||
@@ -1011,6 +1116,7 @@ const getCompatibleOuterwear = (items, requestedOccasion, requestedWeather) => {
         s.isKnit ||
         s.styleScores.work >= 4
       );
+
     if (requestedOccasion === 'casual')
       return (
         s.isHoodie ||
@@ -1018,6 +1124,7 @@ const getCompatibleOuterwear = (items, requestedOccasion, requestedWeather) => {
         s.isCoat ||
         s.styleScores.casual >= 4
       );
+
     if (requestedOccasion === 'party')
       return (
         s.isBlazer ||
@@ -1025,12 +1132,14 @@ const getCompatibleOuterwear = (items, requestedOccasion, requestedWeather) => {
         s.styleScores.party >= 3 ||
         s.styleScores.formal >= 3
       );
+
     if (requestedOccasion === 'sport') return s.isSporty || s.isCoat;
 
     return true;
   });
 };
 
+// gives bonus if styles across pieces match well together
 const styleCompatibilityBonus = (items, requestedOccasion) => {
   const styles = items.map((item) => item.signals.primaryStyle);
   const uniqueStyles = [...new Set(styles)];
@@ -1039,6 +1148,7 @@ const styleCompatibilityBonus = (items, requestedOccasion) => {
 
   if (uniqueStyles.length === 1 && uniqueStyles[0] === requestedOccasion)
     return 10;
+
   if (uniqueStyles.length === 1) return 6;
 
   const allClose = uniqueStyles.every((style) => {
@@ -1054,6 +1164,7 @@ const styleCompatibilityBonus = (items, requestedOccasion) => {
   return allClose ? 3 : -8;
 };
 
+// catches combos that really dont belong together
 const containsHardStyleConflict = (items, requestedOccasion) => {
   const hasBlazer = items.some((item) => item.signals.isBlazer);
   const hasJeans = items.some((item) => item.signals.isJeans);
@@ -1077,6 +1188,7 @@ const containsHardStyleConflict = (items, requestedOccasion) => {
       hasBlazer &&
       items.some((item) => item.signals.isTrouser) &&
       items.some((item) => item.signals.isLoafer || item.signals.isHeel);
+
     if (veryFormalCombo) return true;
   }
 
@@ -1091,6 +1203,7 @@ const containsHardStyleConflict = (items, requestedOccasion) => {
   return false;
 };
 
+// gives bonus if outfit feels complete
 const completenessBonus = (items) => {
   const categories = items.map((item) => item.signals.category);
   const hasTop = categories.includes('top');
@@ -1109,6 +1222,7 @@ const completenessBonus = (items) => {
   return -5;
 };
 
+// checks full outfit against saved / liked / disliked outfit history
 const getOutfitPreferenceBonus = (items, feedbackSummary) => {
   const likedOutfitKeys = new Set(
     (feedbackSummary.likedOutfitKeys || []).map(normalise)
@@ -1130,6 +1244,7 @@ const getOutfitPreferenceBonus = (items, feedbackSummary) => {
   return score;
 };
 
+// turns scoring into a more readable confidence percent
 const buildConfidence = ({
   totalScore,
   colourScore,
@@ -1172,6 +1287,7 @@ const buildConfidence = ({
   return Math.max(35, Math.min(92, Math.round(confidence)));
 };
 
+// builds the reason text shown to user
 const buildExplanation = ({
   requestedOccasion,
   requestedMood,
@@ -1194,6 +1310,7 @@ const buildExplanation = ({
 
   const uniqueColours = [...new Set(colours)];
 
+  // makes sentence saying what the outfit actually is
   const outfitStructure = dress
     ? `${dress.itemName}${shoes ? ` with ${shoes.itemName}` : ''}${
         outerwear ? ` and ${outerwear.itemName}` : ''
@@ -1229,6 +1346,7 @@ const buildExplanation = ({
 
   let colourLine =
     'The colour palette has been kept coordinated so the outfit looks intentional rather than random.';
+
   if (colourScore >= 10) {
     colourLine = `The colour palette is especially strong here, using ${uniqueColours
       .map(titleCase)
@@ -1243,6 +1361,7 @@ const buildExplanation = ({
   }
 
   let weatherLine = '';
+
   if (requestedWeather === 'cold') {
     weatherLine = outerwear
       ? `${outerwear.itemName} helps make the outfit more suitable for colder weather.`
@@ -1261,6 +1380,7 @@ const buildExplanation = ({
   }
 
   let qualityLine = '';
+
   if (styleScore >= 8 && colourScore >= 8 && completenessScore >= 10) {
     qualityLine =
       'Overall, this recommendation scored highly because the style, colours, and full outfit structure all align well together.';
@@ -1272,6 +1392,7 @@ const buildExplanation = ({
       'Overall, this outfit was selected because it is one of the strongest complete matches currently available in your wardrobe.';
   }
 
+  // tags shown on frontend
   const explanationTags = [];
 
   if (requestedOccasion === 'formal') explanationTags.push('Formal Match');
@@ -1313,6 +1434,7 @@ const buildExplanation = ({
   };
 };
 
+// builds all possible outfit combos then scores them
 const buildOutfitCandidates = (
   enrichedItems,
   requestedOccasion,
@@ -1336,12 +1458,14 @@ const buildOutfitCandidates = (
 
   const candidates = [];
 
+  // only take top scoring few from each type so it doesnt explode too much
   const topChoices = tops.slice(0, 8);
   const bottomChoices = bottoms.slice(0, 8);
   const dressChoices = dresses.slice(0, 6);
   const shoeChoices = shoes.slice(0, 8);
   const outerwearChoices = outerwear.slice(0, 6);
 
+  // build top + bottom based outfits
   for (const top of topChoices) {
     for (const bottom of bottomChoices) {
       if (top.id === bottom.id) continue;
@@ -1397,6 +1521,7 @@ const buildOutfitCandidates = (
     }
   }
 
+  // build dress based outfits
   for (const dress of dressChoices) {
     const matchingShoes = shoeChoices.filter((shoe) => {
       if (shoe.id === dress.id) return false;
@@ -1437,6 +1562,7 @@ const buildOutfitCandidates = (
     }
   }
 
+  // remove duplicate combos
   const unique = [];
   const seen = new Set();
 
@@ -1447,6 +1573,7 @@ const buildOutfitCandidates = (
     unique.push(candidate);
   }
 
+  // score each outfit candidate
   let scoredCandidates = unique.map((items) => {
     const baseItemScore = items.reduce((sum, item) => sum + item.score, 0);
     const colours = items.map((item) => item.colour);
@@ -1507,6 +1634,7 @@ const buildOutfitCandidates = (
     scoredCandidates[scoredCandidates.length - 1]?.scoringLog?.totalScore ?? 0;
   const scoreRange = Math.max(1, topScore - bottomScore);
 
+  // final confidence pass
   scoredCandidates = scoredCandidates.map((outfit) => {
     const totalScore = outfit.scoringLog.totalScore;
     const colourScore = outfit.scoringLog.colourScore;
@@ -1539,6 +1667,7 @@ const buildOutfitCandidates = (
     };
   });
 
+  // only return top 3 and rename them nicely
   return scoredCandidates.slice(0, 3).map((outfit, index) => ({
     ...outfit,
     title:
@@ -1550,6 +1679,7 @@ const buildOutfitCandidates = (
   }));
 };
 
+// normalises voice text to make matching easier
 const normaliseVoiceText = (value = '') =>
   value
     .toString()
@@ -1558,6 +1688,7 @@ const normaliseVoiceText = (value = '') =>
     .replace(/[.,!?]/g, '')
     .replace(/\s+/g, ' ');
 
+// tries to detect simple page navigation from voice
 const getRouteFromVoiceCommand = (message = '') => {
   const text = normaliseVoiceText(message);
 
@@ -1622,6 +1753,7 @@ const getRouteFromVoiceCommand = (message = '') => {
   return '';
 };
 
+// maps route back to screen name
 const getScreenNameFromRoute = (route = '') => {
   if (route === '/(tabs)') return 'home';
   if (route === '/(tabs)/suggestions') return 'suggestions';
@@ -1632,6 +1764,7 @@ const getScreenNameFromRoute = (route = '') => {
   return '';
 };
 
+// quick direct intent for scrolling
 const extractScrollIntent = (message = '') => {
   const text = normaliseVoiceText(message);
 
@@ -1670,6 +1803,7 @@ const extractScrollIntent = (message = '') => {
   return null;
 };
 
+// tries to fill add item fields from voice command
 const extractAddItemFieldIntent = (message = '') => {
   const text = normaliseVoiceText(message);
 
@@ -1692,6 +1826,7 @@ const extractAddItemFieldIntent = (message = '') => {
     payload.description = descriptionMatch[1].trim();
   }
 
+  // direct category matching
   const categoryValue = (() => {
     if (
       text.includes('category top') ||
@@ -1752,6 +1887,7 @@ const extractAddItemFieldIntent = (message = '') => {
     payload.colour = titleCase(colourMatch[1]);
   }
 
+  // occasion matching
   const occasionValue = (() => {
     if (text.includes('occasion casual') || text.includes('set occasion to casual'))
       return 'Casual';
@@ -1770,6 +1906,7 @@ const extractAddItemFieldIntent = (message = '') => {
     payload.occasion = occasionValue;
   }
 
+  // mood matching
   const moodValue = (() => {
     if (
       text.includes('mood comfortable') ||
@@ -1816,6 +1953,7 @@ const extractAddItemFieldIntent = (message = '') => {
   };
 };
 
+// direct voice actions for add item page
 const extractAddItemActionIntent = (message = '', currentScreen = '') => {
   const text = normaliseVoiceText(message);
 
@@ -1860,6 +1998,7 @@ const extractAddItemActionIntent = (message = '', currentScreen = '') => {
     };
   }
 
+  // only try field extraction if actually on add item screen
   if (
     currentScreen === 'addItem' &&
     (
@@ -1886,6 +2025,7 @@ const extractAddItemActionIntent = (message = '', currentScreen = '') => {
   return null;
 };
 
+// direct voice intents for wardrobe page
 const extractWardrobeIntent = (message = '') => {
   const text = normaliseVoiceText(message);
 
@@ -1899,6 +2039,7 @@ const extractWardrobeIntent = (message = '') => {
     { words: ['show all', 'show everything', 'all items'], value: 'All', reply: 'Showing all wardrobe items.' },
   ];
 
+  // category filters from voice
   for (const entry of categoryMap) {
     if (entry.words.some((word) => text.includes(word))) {
       return {
@@ -1913,6 +2054,7 @@ const extractWardrobeIntent = (message = '') => {
     }
   }
 
+  // open first/second/third shortcuts
   if (
     text.includes('open first item') ||
     text.includes('expand first item')
@@ -1985,6 +2127,7 @@ const extractWardrobeIntent = (message = '') => {
     };
   }
 
+  // tries to open a named item
   const openMatch =
     text.match(/open (.+)/) ||
     text.match(/show me (.+)/) ||
@@ -2017,6 +2160,7 @@ const extractWardrobeIntent = (message = '') => {
   return null;
 };
 
+// main voice assistant backend route
 app.post('/voice-assistant', async (req, res) => {
   try {
     const { message, currentScreen = '', screenState = {} } = req.body;
@@ -2025,10 +2169,12 @@ app.post('/voice-assistant', async (req, res) => {
       return res.status(400).json({ error: 'message is required' });
     }
 
+    // first check direct hard coded navigation
     const directRoute = getRouteFromVoiceCommand(message);
     const targetScreen = getScreenNameFromRoute(directRoute);
 
     if (directRoute) {
+      // if already on page, dont navigate again
       if (currentScreen === targetScreen) {
         return res.json({
           spokenReply: 'You are already on that page.',
@@ -2050,21 +2196,25 @@ app.post('/voice-assistant', async (req, res) => {
       });
     }
 
+    // direct scroll intent
     const scrollIntent = extractScrollIntent(message);
     if (scrollIntent) {
       return res.json(scrollIntent);
     }
 
+    // direct add item actions
     const addItemIntent = extractAddItemActionIntent(message, currentScreen);
     if (addItemIntent) {
       return res.json(addItemIntent);
     }
 
+    // direct wardrobe actions
     const wardrobeIntent = extractWardrobeIntent(message);
     if (wardrobeIntent) {
       return res.json(wardrobeIntent);
     }
 
+    // if no direct rule matched, ask openai to interpret it
     const response = await openai.responses.create({
       model: 'gpt-4.1-mini',
       input: [
@@ -2201,6 +2351,7 @@ Important:
 
     const parsed = extractJsonObject(response.output_text || '');
 
+    // safety fallback if model gives weird result
     const spokenReply =
       typeof parsed.spokenReply === 'string' && parsed.spokenReply.trim()
         ? parsed.spokenReply.trim()
@@ -2231,6 +2382,7 @@ Important:
   }
 });
 
+// image analysis route for add item page
 app.post('/analyze-item', async (req, res) => {
   try {
     const { imageUrl } = req.body;
@@ -2239,6 +2391,7 @@ app.post('/analyze-item', async (req, res) => {
       return res.status(400).json({ error: 'imageUrl is required' });
     }
 
+    // send image to openai and ask for clothing json
     const response = await openai.responses.create({
       model: 'gpt-4.1-mini',
       input: [
@@ -2296,6 +2449,7 @@ Rules:
   }
 });
 
+// outfit generation route
 app.post('/generate-outfit', async (req, res) => {
   try {
     const {
@@ -2310,10 +2464,12 @@ app.post('/generate-outfit', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // clean input values
     const requestedOccasion = normalise(occasion);
     const requestedMood = normalise(mood);
     const requestedWeather = normalise(weather);
 
+    // score and enrich every wardrobe item
     const enrichedItems = enrichWardrobeItems(
       wardrobeItems,
       requestedOccasion,
@@ -2322,6 +2478,7 @@ app.post('/generate-outfit', async (req, res) => {
       feedbackSummary
     );
 
+    // build outfit combos from those items
     const candidates = buildOutfitCandidates(
       enrichedItems,
       requestedOccasion,
@@ -2342,6 +2499,7 @@ app.post('/generate-outfit', async (req, res) => {
   } catch (error) {
     console.error('Generate outfit error:', error);
 
+    // fallback response if backend logic crashes
     return res.json({
       outfits: [
         {
@@ -2362,6 +2520,7 @@ app.post('/generate-outfit', async (req, res) => {
   }
 });
 
+// starts backend on port 3001
 app.listen(3001, () => {
   console.log('Backend running on http://192.168.0.83:3001');
 });
