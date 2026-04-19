@@ -131,6 +131,8 @@ type ProviderProps = {
   children: ReactNode;
 };
 
+const BACKEND_URL = 'http://192.168.0.83:3001';
+
 export function VoiceAssistantProvider({ children }: ProviderProps) {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -197,7 +199,7 @@ export function VoiceAssistantProvider({ children }: ProviderProps) {
         ? screenStatesRef.current[activeScreen] || {}
         : {};
 
-      const response = await fetch('http://localhost:3001/voice-assistant', {
+      const response = await fetch(`${BACKEND_URL}/voice-assistant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

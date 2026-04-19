@@ -445,7 +445,7 @@ const fetchTodayWeather = async () => {
 
       const feedbackSummary = buildFeedbackSummary();
 
-      const response = await fetch('http://localhost:3001/generate-outfit', {
+      const response = await fetch('http://192.168.0.83:3001/generate-outfit', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

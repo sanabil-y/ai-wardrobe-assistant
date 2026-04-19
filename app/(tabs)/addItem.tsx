@@ -138,7 +138,7 @@ export default function AddItemScreen() {
       const uploadedImageUrl = await uploadImageAndGetUrl();
       setImageUrl(uploadedImageUrl);
 
-      const response = await fetch('http://localhost:3001/analyze-item', {
+      const response = await fetch('http://192.168.0.83:3001/analyze-item', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

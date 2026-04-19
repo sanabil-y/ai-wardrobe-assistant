@@ -1138,21 +1138,38 @@ const buildConfidence = ({
   preferenceScore,
   scoreGapFromTop = 0,
   scoreRange = 1,
+  weakRecommendation = false,
 }) => {
   const safeTotalScore = Math.max(0, totalScore);
 
   let confidence =
-    52 +
-    Math.sqrt(safeTotalScore) * 3.8 +
-    Math.max(0, colourScore) * 0.6 +
-    Math.max(0, styleScore) * 0.8 +
-    Math.max(0, completenessScore) * 0.7 +
-    Math.max(0, preferenceScore) * 0.35;
+    42 +
+    Math.sqrt(safeTotalScore) * 2.2 +
+    Math.max(0, colourScore) * 0.45 +
+    Math.max(0, styleScore) * 0.55 +
+    Math.max(0, completenessScore) * 0.5 +
+    Math.max(0, preferenceScore) * 0.2;
 
-  const relativePenalty = (scoreGapFromTop / Math.max(scoreRange, 1)) * 14;
+  const relativePenalty = (scoreGapFromTop / Math.max(scoreRange, 1)) * 22;
   confidence -= relativePenalty;
 
-  return Math.max(52, Math.min(95, Math.round(confidence)));
+  if (weakRecommendation) {
+    confidence -= 18;
+  }
+
+  if (completenessScore < 10) {
+    confidence -= 8;
+  }
+
+  if (styleScore < 0) {
+    confidence -= 10;
+  }
+
+  if (colourScore < 2) {
+    confidence -= 6;
+  }
+
+  return Math.max(35, Math.min(92, Math.round(confidence)));
 };
 
 const buildExplanation = ({
@@ -1498,6 +1515,12 @@ const buildOutfitCandidates = (
     const preferenceScore = outfit.scoringLog.preferenceScore;
     const scoreGapFromTop = topScore - totalScore;
 
+    const weakRecommendation =
+      totalScore < 30 ||
+      completenessScore < 10 ||
+      styleScore < 0 ||
+      colourScore < 2;
+
     const confidence = buildConfidence({
       totalScore,
       colourScore,
@@ -1506,13 +1529,8 @@ const buildOutfitCandidates = (
       preferenceScore,
       scoreGapFromTop,
       scoreRange,
+      weakRecommendation,
     });
-
-    const weakRecommendation =
-      totalScore < 30 ||
-      completenessScore < 10 ||
-      styleScore < 0 ||
-      colourScore < 2;
 
     return {
       ...outfit,
@@ -1531,193 +1549,78 @@ const buildOutfitCandidates = (
         : 'Another Option',
   }));
 };
-  const candidates = [];
 
-  const topChoices = tops.slice(0, 8);
-  const bottomChoices = bottoms.slice(0, 8);
-  const dressChoices = dresses.slice(0, 6);
-  const shoeChoices = shoes.slice(0, 8);
-  const outerwearChoices = outerwear.slice(0, 6);
+const normaliseVoiceText = (value = '') =>
+  value
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[.,!?]/g, '')
+    .replace(/\s+/g, ' ');
 
-  for (const top of topChoices) {
-    for (const bottom of bottomChoices) {
-      if (top.id === bottom.id) continue;
+const getRouteFromVoiceCommand = (message = '') => {
+  const text = normaliseVoiceText(message);
 
-      const baseColours = [top.colour, bottom.colour];
-      const baseColourScore = getColourHarmonyScore(baseColours);
-
-      if (baseColourScore < 0) continue;
-
-      const baseItems = [top, bottom];
-
-      if (containsHardStyleConflict(baseItems, requestedOccasion)) continue;
-
-      const matchingShoes = shoeChoices.filter((shoe) => {
-        if (baseItems.some((item) => item.id === shoe.id)) return false;
-        return (
-          getColourHarmonyScore([top.colour, bottom.colour, shoe.colour]) >= 0
-        );
-      });
-
-      const shoeSet = matchingShoes.length ? matchingShoes.slice(0, 2) : [null];
-
-      for (const shoe of shoeSet) {
-        const current = shoe ? [...baseItems, shoe] : [...baseItems];
-
-        if (containsHardStyleConflict(current, requestedOccasion)) continue;
-
-        const matchingOuterwear = outerwearChoices.filter((outer) => {
-          if (current.some((item) => item.id === outer.id)) return false;
-          return (
-            getColourHarmonyScore([
-              ...current.map((item) => item.colour),
-              outer.colour,
-            ]) >= 0
-          );
-        });
-
-        const outerSet =
-          requestedWeather === 'cold' || requestedWeather === 'rainy'
-            ? matchingOuterwear.length
-              ? matchingOuterwear.slice(0, 2)
-              : [null]
-            : [null];
-
-        for (const outer of outerSet) {
-          const finalItems = outer ? [...current, outer] : [...current];
-
-          if (containsHardStyleConflict(finalItems, requestedOccasion)) continue;
-
-          candidates.push(finalItems);
-        }
-      }
-    }
+  if (
+    text.includes('home page') ||
+    text === 'home' ||
+    text.includes('go home') ||
+    text.includes('take me home')
+  ) {
+    return '/(tabs)';
   }
 
-  for (const dress of dressChoices) {
-    const matchingShoes = shoeChoices.filter((shoe) => {
-      if (shoe.id === dress.id) return false;
-      return getColourHarmonyScore([dress.colour, shoe.colour]) >= 0;
-    });
-
-    const shoeSet = matchingShoes.length ? matchingShoes.slice(0, 2) : [null];
-
-    for (const shoe of shoeSet) {
-      const current = shoe ? [dress, shoe] : [dress];
-
-      if (containsHardStyleConflict(current, requestedOccasion)) continue;
-
-      const matchingOuterwear = outerwearChoices.filter((outer) => {
-        if (current.some((item) => item.id === outer.id)) return false;
-        return (
-          getColourHarmonyScore([
-            ...current.map((item) => item.colour),
-            outer.colour,
-          ]) >= 0
-        );
-      });
-
-      const outerSet =
-        requestedWeather === 'cold' || requestedWeather === 'rainy'
-          ? matchingOuterwear.length
-            ? matchingOuterwear.slice(0, 2)
-            : [null]
-          : [null];
-
-      for (const outer of outerSet) {
-        const finalItems = outer ? [...current, outer] : [...current];
-
-        if (containsHardStyleConflict(finalItems, requestedOccasion)) continue;
-
-        candidates.push(finalItems);
-      }
-    }
+  if (
+    text.includes('suggestions page') ||
+    text.includes('suggestion page') ||
+    text.includes('outfit suggestions') ||
+    text.includes('go to suggestions') ||
+    text.includes('take me to suggestions') ||
+    text.includes('go to outfit suggestions')
+  ) {
+    return '/(tabs)/suggestions';
   }
 
-  const unique = [];
-  const seen = new Set();
-
-  for (const candidate of candidates) {
-    const key = getOutfitKeyFromIds(candidate.map((item) => item.id));
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(candidate);
+  if (
+    text.includes('wardrobe page') ||
+    text.includes('go to wardrobe') ||
+    text.includes('take me to wardrobe') ||
+    text === 'wardrobe' ||
+    text.includes('my wardrobe')
+  ) {
+    return '/(tabs)/wardrobe';
   }
 
-  const scoredCandidates = unique.map((items) => {
-    const baseItemScore = items.reduce((sum, item) => sum + item.score, 0);
-    const colours = items.map((item) => item.colour);
-    const colourScore = getColourHarmonyScore(colours);
-    const styleScore = styleCompatibilityBonus(items, requestedOccasion);
-    const completenessScore = completenessBonus(items);
-    const preferenceScore = getOutfitPreferenceBonus(items, feedbackSummary);
+  if (
+    text.includes('add item page') ||
+    text.includes('go to add item') ||
+    text.includes('take me to add item') ||
+    text.includes('open add item') ||
+    text.includes('add clothes page')
+  ) {
+    return '/(tabs)/addItem';
+  }
 
-    const totalScore =
-      baseItemScore +
-      colourScore +
-      styleScore +
-      completenessScore +
-      preferenceScore;
+  if (
+    text.includes('saved outfits page') ||
+    text.includes('go to saved outfits') ||
+    text.includes('take me to saved outfits') ||
+    text.includes('saved page')
+  ) {
+    return '/(tabs)/savedOutfits';
+  }
 
-    const confidence = buildConfidence({
-      baseItemScore,
-      colourScore,
-      styleScore,
-      completenessScore,
-      preferenceScore,
-    });
+  if (
+    text.includes('past looks page') ||
+    text.includes('go to past looks') ||
+    text.includes('take me to past looks') ||
+    text.includes('history page')
+  ) {
+    return '/(tabs)/pastLooks';
+  }
 
-    const explanation = buildExplanation({
-      requestedOccasion,
-      requestedMood,
-      requestedWeather,
-      items,
-      colourScore,
-      styleScore,
-      completenessScore,
-      preferenceScore,
-    });
-
-    return {
-      title: 'Recommended Outfit',
-      selectedItemIds: items.map((item) => item.id),
-      reason: explanation.reason,
-      confidence,
-      weakRecommendation: totalScore < 20,
-      explanationTags: explanation.explanationTags,
-      scoringLog: {
-        baseItemScore,
-        colourScore,
-        styleScore,
-        completenessScore,
-        preferenceScore,
-        totalScore,
-        items: items.map((item) => ({
-          itemName: item.itemName,
-          category: item.category,
-          colour: item.colour,
-          score: item.score,
-          scoreLog: item.scoreLog,
-        })),
-      },
-    };
-  });
-
-  scoredCandidates.sort(
-    (a, b) => b.scoringLog.totalScore - a.scoringLog.totalScore
-  );
-
-  return scoredCandidates.slice(0, 3).map((outfit, index) => ({
-    ...outfit,
-    title:
-      index === 0
-        ? 'Best Match'
-        : index === 1
-        ? 'Alternative Option'
-        : 'Another Option',
-  }));
-
-
+  return '';
+};
 
 const getScreenNameFromRoute = (route = '') => {
   if (route === '/(tabs)') return 'home';
@@ -2460,5 +2363,5 @@ app.post('/generate-outfit', async (req, res) => {
 });
 
 app.listen(3001, () => {
-  console.log('Backend running on http://localhost:3001');
+  console.log('Backend running on http://192.168.0.83:3001');
 });
